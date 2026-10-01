@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#282039"/>
+      <stop offset="1" stop-color="#121019"/>
+    </linearGradient>
+    <linearGradient id="planet" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#d5b4ff"/>
+      <stop offset="1" stop-color="#9970f5"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="62" height="62" rx="18" fill="url(#tile)" stroke="#514166"/>
+  <ellipse cx="32" cy="34" rx="25" ry="9" transform="rotate(-25 32 34)" fill="none" stroke="#ff4cda" stroke-width="3"/>
+  <circle cx="32" cy="31" r="16" fill="url(#planet)"/>
+  <path d="M25 27v3m13-3v3" stroke="#21142f" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M27 35q5 6 10 0" fill="none" stroke="#21142f" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="22" cy="33" r="2" fill="#ff4cda" opacity=".8"/>
+  <circle cx="42" cy="33" r="2" fill="#ff4cda" opacity=".8"/>
+  <path d="M9.4 43.6c2.1 4.5 14 2.6 26.5-3.2 12.5-5.8 21.3-13.7 19.2-18.2" fill="none" stroke="#ff4cda" stroke-width="3" stroke-linecap="round"/>
+  <path d="m49 9 1.5 4.5L55 15l-4.5 1.5L49 21l-1.5-4.5L43 15l4.5-1.5Z" fill="#b7ff68"/>
+  <circle cx="14" cy="49" r="3" fill="#b7ff68"/>
+</svg>
