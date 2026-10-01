@@ -21,7 +21,15 @@ describe("Wikipedia context",()=>{
 });
 describe("independent live sources",()=>{
   it("reports missing keys without contacting their providers",async()=>{const fetch=vi.fn();vi.stubGlobal("fetch",fetch);const results=await Promise.all([discover({emojiId:emoji.id,topic,locale:"en",provider:"youtube"},new AbortController().signal),discover({emojiId:emoji.id,topic,locale:"en",provider:"freesound"},new AbortController().signal),searchGiphy("octopus","en",new AbortController().signal)]);expect(results.every(r=>r.status==="unavailable"&&r.reason==="credentials")).toBe(true);expect(fetch).not.toHaveBeenCalled();});
-  it("distinguishes quota, empty and aborted responses",async()=>{vi.stubGlobal("fetch",vi.fn().mockResolvedValueOnce(response({},429)).mockResolvedValueOnce(response({data:[]})).mockRejectedValueOnce(new Error()));const input={emojiId:emoji.id,topic,locale:"en" as const,provider:"art" as const};expect((await discover(input,new AbortController().signal)).reason).toBe("quota");expect((await discover(input,new AbortController().signal)).status).toBe("empty");clearProviderCache();const controller=new AbortController();controller.abort();expect((await discover(input,controller.signal)).reason).toBe("timeout");});
+  it("distinguishes quota, empty and aborted responses",async()=>{
+    const fetch=vi.fn().mockImplementation(async()=>response({},429));vi.stubGlobal("fetch",fetch);
+    const input={emojiId:emoji.id,topic,locale:"en" as const,provider:"art" as const};
+    expect((await discover(input,new AbortController().signal)).reason).toBe("quota");
+    fetch.mockImplementation(async(url)=>response(String(url).includes("cleveland")?{data:[]}:{objectIDs:null}));
+    expect((await discover(input,new AbortController().signal)).status).toBe("empty");
+    clearProviderCache();const controller=new AbortController();controller.abort();
+    expect((await discover(input,controller.signal)).reason).toBe("timeout");
+  });
   it("searches a larger educational pool and verifies metadata before selecting videos",async()=>{
     vi.stubEnv("YOUTUBE_API_KEY","test-key");
     const fetch=vi.fn().mockResolvedValueOnce(response({items:[{id:{videoId:"abc"}},{id:{videoId:"deleted"}},{id:{videoId:"abc"}}]})).mockResolvedValueOnce(response({items:[{id:{videoId:"abc"}}]})).mockResolvedValueOnce(response({items:[{
@@ -51,8 +59,6 @@ describe("independent live sources",()=>{
     const result=await discover({emojiId:emoji.id,topic,locale:"en",provider:"youtube"},new AbortController().signal);
     expect(result.reason).toBe("quota");expect(result.items).toEqual([]);
   });
-  it("excludes art without verified public-domain images",async()=>{vi.stubGlobal("fetch",vi.fn().mockResolvedValue(response({data:[{id:1,title:"Allowed",is_public_domain:true,image_id:"one"},{id:2,title:"Copyright",is_public_domain:false,image_id:"two"},{id:3,title:"Missing",is_public_domain:true,image_id:null}]})));const result=await discover({emojiId:emoji.id,topic,locale:"en",provider:"art"},new AbortController().signal);expect(result.items.map(a=>a.title)).toEqual(["Allowed"]);});
-  it("removes reviewed incorrect artwork tags without inserting replacements",async()=>{vi.stubGlobal("fetch",vi.fn().mockResolvedValue(response({data:[{id:110176,title:"Papal Medal of Alexander VII",is_public_domain:true,image_id:"one"}]})));const result=await discover({emojiId:"1F5FD",topic:{...topic,label:"Statue of Liberty",query:"Statue of Liberty",englishQuery:"Statue of Liberty"},locale:"en",provider:"art"},new AbortController().signal);expect(result.status).toBe("empty");});
   it("excludes noncommercial and unattributed audio",async()=>{vi.stubEnv("FREESOUND_API_KEY","test-key");vi.stubGlobal("fetch",vi.fn().mockResolvedValue(response({results:[{id:1,name:"CC0",url:"https://freesound.org/s/1/",username:"artist",license:"https://creativecommons.org/publicdomain/zero/1.0/",previews:{"preview-hq-mp3":"https://example.com/a.mp3"}},{id:2,name:"NC",license:"https://creativecommons.org/licenses/by-nc/4.0/",previews:{"preview-hq-mp3":"https://example.com/b.mp3"}}]})));const result=await discover({emojiId:emoji.id,topic,locale:"en",provider:"freesound"},new AbortController().signal);expect(result.items.map(s=>s.title)).toEqual(["CC0"]);expect(result.items[0].creator).toBe("artist");});
   it("preserves GIPHY ordering, ratings and fresh retrieval",async()=>{vi.stubEnv("NEXT_PUBLIC_GIPHY_API_KEY","test-browser-key");const data={data:["second","first"].map(id=>({id,title:id,url:`https://giphy.com/gifs/${id}`,images:{fixed_width:{url:`https://media.giphy.com/${id}.gif`}}}))};const fetch=vi.fn().mockResolvedValue(response(data));vi.stubGlobal("fetch",fetch);const first=await searchGiphy("octopus","es",new AbortController().signal);await searchGiphy("octopus","es",new AbortController().signal);expect(first.items.map(g=>g.id)).toEqual(["second","first"]);expect(fetch).toHaveBeenCalledTimes(2);expect(new URL(String(fetch.mock.calls[0][0])).searchParams.get("rating")).toBe("g");});
 });

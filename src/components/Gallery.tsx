@@ -2,16 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUpRight, BookOpen, Check, ChevronRight, Heart, LoaderCircle, Music2, Palette, Play, Search, Sparkles, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, Check, ChevronRight, Heart, LoaderCircle, Music2, Play, Search, Sparkles, X } from "lucide-react";
 import WikipediaContext from "./WikipediaContext";
 import VideoPlayer from "./VideoPlayer";
+import ArtGallery from "./ArtGallery";
 import { defaultTopic } from "@/lib/catalog";
 import { messages } from "@/lib/i18n";
 import { searchGiphy } from "@/lib/giphy";
 import { validTopic } from "@/lib/storage";
 import type { Discovery, EmojiRecord, Locale, MediaItem, Provider, ProviderResult, Resolution, TopicCandidate } from "@/lib/types";
 
-const providers: Provider[]=["wikipedia","youtube","giphy","freesound","art"];
+const providers: Provider[]=["wikipedia","art","youtube","giphy","freesound"];
 const loading: ProviderResult={status:"loading",items:[]};
 function emptyResults() { return Object.fromEntries(providers.map(p=>[p,loading])) as Record<Provider,ProviderResult>; }
 const safeURL=(url?:string)=>{try { const parsed=new URL(url||""); return parsed.protocol==="https:"?parsed.href:undefined; }catch{return undefined;}};
@@ -21,7 +22,9 @@ function Preview({item,className=""}:{item:MediaItem;className?:string}) {
   if(failed||!safeURL(item.previewUrl)) return <div className={`preview-fallback ${className}`}><Sparkles size={24}/></div>;
   return <img src={safeURL(item.previewUrl)} alt={item.title} loading="lazy" className={className} onError={()=>setFailed(true)}/>;
 }
-function SourceLink({item,label}:{item:MediaItem;label:string}) { return <a href={safeURL(item.sourceUrl)} target="_blank" rel="noopener noreferrer">{label}<ArrowUpRight size={13}/></a>; }
+function SourceLink({item,label}:{item:MediaItem;label:string}) {
+  return <a href={safeURL(item.sourceUrl)} target="_blank" rel="noopener noreferrer">{label}<ArrowUpRight size={13}/></a>;
+}
 function VideoCard({item,t,onPlay}:{item:MediaItem;t:typeof messages.en;onPlay:(item:MediaItem)=>void}) {
   const duration=item.durationSeconds?`${Math.floor(item.durationSeconds/60)}:${String(item.durationSeconds%60).padStart(2,"0")}`:null;
   return <article className="media-card video-card">
@@ -29,10 +32,10 @@ function VideoCard({item,t,onPlay}:{item:MediaItem;t:typeof messages.en;onPlay:(
     <h4>{item.title}</h4><p>{item.creator}</p><SourceLink item={item} label={t.source}/>
   </article>;
 }
-function MediaSection({provider,result,locale,retry,reduced,onPlay}:{provider:Provider;result:ProviderResult;locale:Locale;retry:()=>void;reduced:boolean;onPlay:(item:MediaItem)=>void}) {
+function MediaSection({provider,result,locale,retry,reduced,onPlay}:{provider:Exclude<Provider,"art"|"wikipedia">;result:ProviderResult;locale:Locale;retry:()=>void;reduced:boolean;onPlay:(item:MediaItem)=>void}) {
   const t=messages[locale];
-  const titles={wikipedia:t.context,youtube:t.watchLearn,giphy:t.gifs,freesound:t.listen,art:t.art};
-  const icons={wikipedia:BookOpen,youtube:Play,giphy:Sparkles,freesound:Music2,art:Palette};
+  const titles={youtube:t.watchLearn,giphy:t.gifs,freesound:t.listen};
+  const icons={youtube:Play,giphy:Sparkles,freesound:Music2};
   const Icon=icons[provider];
   const message=result.status==="empty"?(provider==="youtube"?t.noLearningVideos:t.noMedia):result.reason==="credentials"?t.credentials:result.reason==="quota"?t.quota:result.reason==="timeout"?t.timeout:t.network;
   return <section className={`media-section ${provider}-section`} aria-label={titles[provider]} aria-busy={result.status==="loading"}>
@@ -148,7 +151,7 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
       {trail.length>0&&<nav className="exploration-trail" aria-label={locale==="es"?"Camino de exploración":"Exploration path"}><button onClick={goBack}>← {locale==="es"?"Volver a":"Back to"} {trail.at(-1)?.label}</button></nav>}
       <div className="topic-bar"><div>{alternatives.some(c=>c.label!==topic.label)&&<span>{t.alternative}</span>}{alternatives.filter(c=>c.label!==topic.label).map(c=><button key={c.wikiTitle||c.label} onClick={()=>chooseTopic(c)} disabled={resolving}>{c.label}<ChevronRight size={12}/></button>)}</div><button className="change-subject" onClick={()=>setChanging(!changing)} disabled={resolving}><Search size={14}/>{t.change}</button></div>
       <AnimatePresence>{changing&&<motion.div className="subject-picker" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}><form onSubmit={findSubjects}><Search size={17}/><input autoFocus maxLength={150} aria-label={t.subjectSearch} placeholder={t.subjectSearch} value={query} onChange={e=>setQuery(e.target.value)}/><button className="primary-button" disabled={searching||!query.trim()}>{searching?<LoaderCircle size={16} className="spin"/>:t.find}</button></form>{subjectResults&&<div className="subject-results" aria-label={t.results}>{subjectResults.length?subjectResults.map(c=><button onClick={()=>chooseTopic(c)} key={c.wikiTitle}><BookOpen size={14}/>{c.label}<ChevronRight size={14}/></button>):<p>{t.noSubjects}</p>}</div>}</motion.div>}</AnimatePresence>
-      <div className="gallery-body"><WikipediaContext key={`${topic.label}:${topic.language}`} result={resolving?loading:results.wikipedia} topic={topic} emojiLabel={emoji.labels[locale]} locale={locale} reduced={reduced} retry={()=>void loadSource("wikipedia")} change={()=>setChanging(true)} choose={chooseTopic}/>{providers.filter(p=>p!=="wikipedia").map(p=><MediaSection key={`${topic.label}:${topic.language}:${p}`} provider={p} result={resolving?loading:results[p]} locale={locale} reduced={reduced} retry={()=>void loadSource(p)} onPlay={item=>{pauseMedia();setActiveVideo(item);}}/>)}</div>
+      <div className="gallery-body"><WikipediaContext key={`${topic.label}:${topic.language}`} result={resolving?loading:results.wikipedia} topic={topic} emojiLabel={emoji.labels[locale]} locale={locale} reduced={reduced} retry={()=>void loadSource("wikipedia")} change={()=>setChanging(true)} choose={chooseTopic}/>{providers.filter(p=>p!=="wikipedia").map(p=>p==="art"?<ArtGallery key={`${topic.label}:${topic.language}:art`} result={resolving?loading:results.art} locale={locale} reduced={reduced} retry={()=>void loadSource("art")} onOpen={()=>{pauseMedia();setActiveVideo(null);}}/>:<MediaSection key={`${topic.label}:${topic.language}:${p}`} provider={p} result={resolving?loading:results[p]} locale={locale} reduced={reduced} retry={()=>void loadSource(p)} onPlay={item=>{pauseMedia();setActiveVideo(item);}}/>)}</div>
       {activeVideo&&<VideoPlayer item={activeVideo} locale={locale} onClose={()=>setActiveVideo(null)}/>}
       <footer className="gallery-footer"><Check size={13}/>{t.stop}</footer>
     </motion.div>

@@ -66,4 +66,12 @@ Run `node scripts/review-wikipedia.mjs` against the local server for a separate 
 
 Update search/subject associations in `src/lib/aliases.ts`. Standard categories and translations come from the pinned Emojibase package. Provider adapters live in `src/lib/providers.ts`; GIPHY remains separate in `src/lib/giphy.ts` and is never cached or proxied. Permitted server metadata is cached for one hour with a 256-entry cap.
 
+## Visual gallery
+
+The gallery now searches **The Metropolitan Museum of Art** and **Cleveland Museum of Art** directly, with no API keys. Up to five relevant, public-domain images appear near the top of the discovery. Paintings receive a preference within relevance tiers; prints, sculptures, and other art can provide closer visual matches for specific subjects. Cards show the creator, date, collection, license, and matched term, with a separate museum link.
+
+Click an image for the large viewer. Browse with next/previous buttons or arrow keys, zoom in and scroll for details, and close with Escape, the close button, or the backdrop. Closing restores focus to the image card and keeps your discovery open. The viewer loads the larger image only when opened and falls back to the preview if that asset fails. A failed museum leaves successful results visible, with a retry action.
+
+Searches expand selected concepts into visual associations, then check museum titles, subject tags, and descriptions. Artist-name hits, unrelated substrings, and known homonyms are filtered. Changed subjects replace the original emoji associations. Results are never filled with unrelated images just to reach five. See [selection and live verification](docs/art-review.md) for source contracts, current limitations, and screenshots.
+
 This is a personal local MVP. Live relevance varies, and empty results are honest. Public deployment, accounts, generated media, combinations, and Jev-assisted search are future work. No deployment is performed by this project.
