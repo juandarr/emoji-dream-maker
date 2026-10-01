@@ -2,18 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUpRight, BookOpen, Check, ChevronRight, Heart, LoaderCircle, Music2, Palette, Play, Search, Sparkles, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, Check, ChevronRight, Heart, LoaderCircle, Music2, Play, Search, Sparkles, X } from "lucide-react";
 import WikipediaContext from "./WikipediaContext";
 import VideoPlayer from "./VideoPlayer";
 import { loadVideos } from "@/lib/video-prefetch";
 import { videoKey } from "@/lib/video-key";
+import ArtGallery from "./ArtGallery";
 import { defaultTopic } from "@/lib/catalog";
 import { messages } from "@/lib/i18n";
 import { searchGiphy } from "@/lib/giphy";
 import { validTopic } from "@/lib/storage";
 import type { Discovery, EmojiRecord, Locale, MediaItem, Provider, ProviderResult, Resolution, TopicCandidate } from "@/lib/types";
 
-const providers: Provider[]=["wikipedia","youtube","giphy","freesound","art"];
+const providers: Provider[]=["wikipedia","art","youtube","giphy","freesound"];
 const loading: ProviderResult={status:"loading",items:[]};
 function emptyResults() { return Object.fromEntries(providers.map(p=>[p,loading])) as Record<Provider,ProviderResult>; }
 const safeURL=(url?:string)=>{try { const parsed=new URL(url||""); return parsed.protocol==="https:"?parsed.href:undefined; }catch{return undefined;}};
@@ -23,7 +24,9 @@ function Preview({item,className=""}:{item:MediaItem;className?:string}) {
   if(failed||!safeURL(item.previewUrl)) return <div className={`preview-fallback ${className}`}><Sparkles size={24}/></div>;
   return <img src={safeURL(item.previewUrl)} alt={item.title} loading="lazy" className={className} onError={()=>setFailed(true)}/>;
 }
-function SourceLink({item,label}:{item:MediaItem;label:string}) { return <a href={safeURL(item.sourceUrl)} target="_blank" rel="noopener noreferrer">{label}<ArrowUpRight size={13}/></a>; }
+function SourceLink({item,label}:{item:MediaItem;label:string}) {
+  return <a href={safeURL(item.sourceUrl)} target="_blank" rel="noopener noreferrer">{label}<ArrowUpRight size={13}/></a>;
+}
 function VideoCard({item,t,onPlay}:{item:MediaItem;t:typeof messages.en;onPlay:(item:MediaItem)=>void}) {
   const duration=item.durationSeconds?`${Math.floor(item.durationSeconds/60)}:${String(item.durationSeconds%60).padStart(2,"0")}`:null;
   return <article className="media-card video-card">
@@ -31,10 +34,10 @@ function VideoCard({item,t,onPlay}:{item:MediaItem;t:typeof messages.en;onPlay:(
     <h4>{item.title}</h4><p>{item.creator}</p><SourceLink item={item} label={t.source}/>
   </article>;
 }
-function MediaSection({provider,result,locale,retry,reduced,onPlay}:{provider:Provider;result:ProviderResult;locale:Locale;retry:()=>void;reduced:boolean;onPlay:(item:MediaItem)=>void}) {
+function MediaSection({provider,result,locale,retry,reduced,onPlay}:{provider:Exclude<Provider,"art"|"wikipedia">;result:ProviderResult;locale:Locale;retry:()=>void;reduced:boolean;onPlay:(item:MediaItem)=>void}) {
   const t=messages[locale];
-  const titles={wikipedia:t.context,youtube:t.watchLearn,giphy:t.gifs,freesound:t.listen,art:t.art};
-  const icons={wikipedia:BookOpen,youtube:Play,giphy:Sparkles,freesound:Music2,art:Palette};
+  const titles={youtube:t.watchLearn,giphy:t.gifs,freesound:t.listen};
+  const icons={youtube:Play,giphy:Sparkles,freesound:Music2};
   const Icon=icons[provider];
   const message=result.status==="empty"?(provider==="youtube"?t.noLearningVideos:t.noMedia):result.reason==="setup"?t.videoSetup:result.reason==="credentials"?t.credentials:result.reason==="quota"?t.quota:result.reason==="timeout"?t.timeout:t.network;
   return <section className={`media-section ${provider}-section`} aria-label={titles[provider]} aria-busy={result.status==="loading"}>

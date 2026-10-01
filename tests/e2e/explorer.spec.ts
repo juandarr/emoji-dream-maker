@@ -255,3 +255,73 @@ test("Wikipedia rate-limit recovery shows a countdown without automatic extra re
   await expect(retry).toBeDisabled();await expect(retry).toBeEnabled();expect(attempts).toBe(1);
   await retry.click();await expect(page.getByText("Recovered Wikipedia context.")).toBeVisible();expect(attempts).toBe(2);
 });
+
+async function stubArt(page: Page, broken = false) {
+  await page.route("**/api/discover", async route => {
+    const input = route.request().postDataJSON();
+    if (input.provider !== "art") return route.fulfill({ json: { status: "empty", items: [] } });
+    const items = Array.from({ length: 5 }, (_, index) => ({ id: `museum:${index}`, title: `${input.topic.englishQuery} study ${index + 1}`, creator: "Museum artist", date: "1890", kind: "Painting", collection: "Cleveland Museum of Art", matchedTerm: input.topic.englishQuery.toLowerCase(), previewUrl: `https://openaccess-cdn.clevelandart.org/test-${index}.jpg`, imageUrl: `https://openaccess-cdn.clevelandart.org/test-${index}-large.jpg`, sourceUrl: `https://clevelandart.org/art/${index}`, license: "CC0", licenseUrl: "https://creativecommons.org/publicdomain/zero/1.0/" }));
+    await route.fulfill({ json: { status: "ready", items, partial: broken } });
+  });
+  await page.route("https://openaccess-cdn.clevelandart.org/**", route => {
+    if (broken && route.request().url().includes("-large")) return route.fulfill({ status: 404 });
+    return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700"><rect width="900" height="700" fill="#987c6a"/><circle cx="450" cy="350" r="150" fill="#dcc4a3"/></svg>' });
+  });
+}
+async function openArt(page: Page) {
+  await page.getByRole("textbox", { name: /Search a word/ }).fill("octopus");
+  await clickEmoji(page, "octopus");
+  await page.getByRole("button", { name: "Open portal", exact: true }).first().click();
+  await expect(page.locator(".artwork-card")).toHaveCount(5);
+}
+test("museum previews open a larger viewer, browse, zoom and restore focus", async ({ page }) => {
+  await stubArt(page);await openArt(page);
+  const preview = page.getByRole("button", { name: "Expand image: Octopus study 1", exact: true });
+  await expect.poll(() => preview.locator("img").evaluate(el => (el as HTMLImageElement).naturalWidth)).toBe(900);
+  await expect(page.locator(".artwork-provenance").first()).toContainText("Cleveland Museum of Art");
+  await expect(page.locator(".artwork-source").first()).toHaveAttribute("href", "https://clevelandart.org/art/0");
+  const previewSize = (await preview.boundingBox())!;
+  await preview.click();
+  const popup = page.locator(".image-dialog");await expect(popup).toBeVisible();
+  await expect(popup.getByRole("button", { name: "Close image", exact: true })).toBeFocused();
+  expect((await popup.locator(".image-dialog-stage").boundingBox())!.height).toBeGreaterThan(previewSize.height);
+  await expect(popup.locator("img")).toHaveAttribute("src", /test-0-large/);
+  await page.keyboard.press("ArrowRight");await expect(popup.getByRole("heading")).toHaveText("Octopus study 2");
+  await popup.getByRole("button", { name: "Previous image", exact: true }).click();await expect(popup.getByRole("heading")).toHaveText("Octopus study 1");
+  await popup.getByRole("button", { name: "Zoom in", exact: true }).click();await expect(popup.locator(".image-dialog-stage")).toHaveClass(/zoomed/);
+  expect(await popup.locator(".image-dialog-stage").evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
+  await popup.getByRole("button", { name: "Next image", exact: true }).click();await expect(popup.locator(".image-dialog-stage")).not.toHaveClass(/zoomed/);
+  const close = popup.getByRole("button", { name: "Close image", exact: true });await close.focus();await page.keyboard.press("Shift+Tab");
+  expect(await page.evaluate(() => !!document.activeElement?.closest(".image-dialog"))).toBe(true);
+  await page.keyboard.press("Tab");await expect(close).toBeFocused();
+  await page.keyboard.press("Escape");await expect(popup).toHaveCount(0);await expect(preview).toBeFocused();await expect(page.locator(".gallery")).toBeVisible();
+  await preview.click();await page.getByRole("button", { name: "Close image", exact: true }).click();await expect(preview).toBeFocused();
+  await preview.click();await page.mouse.click(2, 2);await expect(popup).toHaveCount(0);await expect(page.locator(".gallery")).toBeVisible();
+});
+test("large-image failures fall back to previews and incomplete collections can retry", async ({ page }) => {
+  await stubArt(page, true);await openArt(page);
+  await expect(page.locator(".art-partial")).toBeVisible();
+  await page.getByRole("button", { name: "Expand image: Octopus study 1", exact: true }).click();
+  const image = page.locator(".image-dialog img");
+  await expect(image).toHaveAttribute("src", /test-0\.jpg$/);
+  await expect.poll(() => image.evaluate(el => (el as HTMLImageElement).naturalWidth)).toBe(900);
+  await page.getByRole("button", { name: "Close image", exact: true }).click();
+  await page.locator(".art-partial").getByRole("button", { name: "Try again" }).click();await expect(page.locator(".artwork-card")).toHaveCount(5);
+});
+test("phone image viewer stays inside the screen and Spanish labels are localized", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });await stubArt(page);await openArt(page);
+  await page.getByRole("button", { name: "Expand image: Octopus study 1", exact: true }).click();
+  const popup = page.locator(".image-dialog"), bounds = (await popup.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(0);expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
+  expect(await popup.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await page.getByRole("button", { name: "Close image", exact: true }).click();await page.getByRole("button", { name: "Close gallery", exact: true }).click();
+  await page.getByLabel("Interface language").selectOption("es");await page.getByRole("textbox", { name: /Busca una palabra/ }).fill("pulpo");await clickEmoji(page, "pulpo");await page.getByRole("button", { name: "Abrir portal", exact: true }).last().click();
+  await expect(page.getByRole("heading", { name: "La galería visual" })).toBeVisible();await page.getByRole("button", { name: /Ampliar imagen:/ }).first().click();
+  await expect(page.getByRole("button", { name: "Cerrar imagen", exact: true })).toBeVisible();await expect(page.locator(".image-dialog").getByRole("link", { name: "Visitar museo" })).toBeVisible();
+});
+test("broken previews explain the failure and a changed subject replaces all image cards", async ({ page }) => {
+  await stubArt(page);await page.route("https://openaccess-cdn.clevelandart.org/**", route => route.fulfill({ status: 404 }));await openArt(page);
+  await expect(page.locator(".art-image-error").first()).toBeVisible();
+  await page.locator(".topic-bar").getByRole("button", { name: "Ocean", exact: false }).click();
+  await expect(page.locator(".artwork-card h4").first()).toHaveText("Ocean study 1");await expect(page.locator(".artwork-card h4").filter({ hasText: "Octopus" })).toHaveCount(0);
+});

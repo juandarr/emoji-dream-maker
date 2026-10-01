@@ -4,7 +4,8 @@ import { clearWikiCache, wikipedia, WikipediaError } from "./wikipedia";
 export { resolveTopic, extractLead } from "./wikipedia";
 import { artExclusionsByQuery } from "./aliases";
 import { normalize } from "./catalog";
-import { learningVideoQuery, selectLearningCandidates, youtubeApiCandidate } from "./youtube-selection";
+import { discoverArt } from "./art";
+import { learningVideoQuery, selectLearningCandidates,youtubeApiCandidate, selectLearningVideos, videoDurationSeconds } from "./youtube-selection";
 import type { YouTubeVideo } from "./youtube-selection";
 import { clearYouTubeCache, discoverYouTube } from "./youtube";
 import { YouTubeError } from "./youtube-error";
@@ -51,23 +52,17 @@ async function freesound(topic: TopicCandidate, signal: AbortSignal): Promise<Me
   const data=await getJSON<{results:Sound[]}>(url,signal,{Authorization:`Token ${process.env.FREESOUND_API_KEY}`});
   return (data.results||[]).filter(s=>/\/publicdomain\/zero\/|\/licenses\/by\//.test(s.license)&&s.previews["preview-hq-mp3"]).slice(0,3).map(s=>({id:String(s.id),title:s.name,sourceUrl:s.url,creator:s.username,license:s.license.includes("/zero/")?"CC0":"CC BY",licenseUrl:s.license,previewUrl:s.previews["preview-hq-mp3"]}));
 }
-async function artworks(topic: TopicCandidate, signal: AbortSignal): Promise<MediaItem[]> {
-  const url=new URL("https://api.artic.edu/api/v1/artworks/search");
-  url.searchParams.set("params",JSON.stringify({
-    query:{bool:{must:[{multi_match:{query:topic.englishQuery,fields:["title^3","subject_titles"],operator:"and"}}],filter:[{term:{is_public_domain:true}},{exists:{field:"image_id"}}]}},
-    limit:3,fields:["id","title","image_id","artist_display","date_display","artwork_type_title","is_public_domain"],
-  }));
-  type Art={id:number;title:string;image_id:string|null;artist_display:string;date_display:string;artwork_type_title:string;is_public_domain:boolean};
-  const data=await getJSON<{data:Art[];config:{iiif_url:string}}>(url,signal);
-  const excluded=artExclusionsByQuery[normalize(topic.englishQuery)]||[];
-  return (data.data||[]).filter(a=>a.is_public_domain&&a.image_id&&!excluded.includes(a.title)).slice(0,3).map(a=>({id:String(a.id),title:a.title,sourceUrl:`https://www.artic.edu/artworks/${a.id}`,previewUrl:`https://www.artic.edu/iiif/2/${encodeURIComponent(a.image_id!)}/full/600,/0/default.jpg`,creator:a.artist_display,date:a.date_display,kind:a.artwork_type_title,license:"Public domain",licenseUrl:"https://www.artic.edu/image-licensing"}));
-}
 export async function discover(input: DiscoverInput, signal: AbortSignal): Promise<ProviderResult> {
   const {provider,topic,locale}=input;
   const start=Date.now();
   if (provider==="freesound"&&!process.env.FREESOUND_API_KEY) return {status:"unavailable",items:[],reason:"credentials",message:"This source has not been connected yet."};
   try {
-    const items=await ({wikipedia:()=>wikipedia(topic,signal),youtube:()=>discoverYouTube(topic,locale,signal,stageSignal=>youtubeApi(topic,locale,stageSignal)),freesound:()=>freesound(topic,signal),art:()=>artworks(topic,signal)})[provider]();
+    if (provider === "art") {
+      const result = await discoverArt(topic, signal, getJSON);
+      console.info(JSON.stringify({provider,durationMs:Date.now()-start,status:result.status,partial:result.partial}));
+      return result;
+    }
+    const items=await ({wikipedia:()=>wikipedia(topic,signal),youtube:()=>youtube(topic,locale,signal),freesound:()=>freesound(topic,signal)})[provider]();
     console.info(JSON.stringify({provider,durationMs:Date.now()-start,status:items.length?"ready":"empty"}));
     return {status:items.length?"ready":"empty",items};
   } catch(error) {
