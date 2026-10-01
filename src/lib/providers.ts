@@ -4,30 +4,30 @@ import { clearWikiCache, wikipedia, WikipediaError } from "./wikipedia";
 export { resolveTopic, extractLead } from "./wikipedia";
 import { artExclusionsByQuery } from "./aliases";
 import { normalize } from "./catalog";
-import { learningVideoQuery, selectLearningVideos, videoDurationSeconds } from "./youtube-selection";
+import { learningVideoQuery, selectLearningCandidates, youtubeApiCandidate } from "./youtube-selection";
 import type { YouTubeVideo } from "./youtube-selection";
+import { clearYouTubeCache, discoverYouTube } from "./youtube";
+import { YouTubeError } from "./youtube-error";
+import { MetadataCache } from "./metadata-cache";
 import type { DiscoverInput, Locale, MediaItem, ProviderResult, TopicCandidate } from "./types";
 
 export class ProviderError extends Error {
   constructor(public reason: "quota" | "timeout" | "network", message: string) { super(message); }
 }
-const cache = new Map<string, { at: number; value: unknown }>();
-export function clearProviderCache() { cache.clear(); clearWikiCache(); }
+const cache = new MetadataCache<unknown>();
+export function clearProviderCache() { cache.clear(); clearWikiCache(); clearYouTubeCache(); }
 async function getJSON<T>(url: URL | string, signal: AbortSignal, headers: Record<string,string> = {}): Promise<T> {
-  const key = String(url);
-  const hit = cache.get(key);
-  if (hit && Date.now()-hit.at < 3600000) return hit.value as T;
-  const response = await fetch(url, { headers, signal, cache: "no-store" });
+  return cache.get(JSON.stringify([String(url),headers]), signal, async sharedSignal => {
+  const response = await fetch(url, { headers, signal: sharedSignal, cache: "no-store" });
   if (response.status === 429 || response.status === 403) throw new ProviderError("quota","This source is temporarily unavailable or has reached its request limit.");
   if (!response.ok) throw new ProviderError("network","This source could not be reached. Try again shortly.");
   const text = await response.text();
   if (text.length > 6_000_000) throw new ProviderError("network","This result is too large to display.");
   const value = JSON.parse(text) as T;
-  if (cache.size >= 256) cache.delete(cache.keys().next().value!);
-  cache.set(key,{at:Date.now(),value});
   return value;
+  }) as Promise<T>;
 }
-async function youtube(topic: TopicCandidate, locale: Locale, signal: AbortSignal): Promise<MediaItem[]> {
+async function youtubeApi(topic: TopicCandidate, locale: Locale, signal: AbortSignal) {
   // Independent, short queries avoid ambiguous multi-word OR searches. The two
   // pools cover explanations and illustrative documentaries with at most 50 IDs.
   const pools=await Promise.all([false,true].map(async documentary=>{
@@ -42,7 +42,7 @@ async function youtube(topic: TopicCandidate, locale: Locale, signal: AbortSigna
   const details=await getJSON<{items?:YouTubeVideo[]}>(detailsURL,signal);
   const byId=new Map((details.items||[]).map(video=>[video.id,video]));
   const videos=ids.flatMap(id=>{const video=byId.get(id);return video?[{...video,snippet:{...video.snippet,title:load(video.snippet.title).text(),description:load(video.snippet.description||"").text()}}]:[];});
-  return selectLearningVideos(videos,topic,locale).map(v=>({id:v.id,title:v.snippet.title,creator:v.snippet.channelTitle,sourceUrl:`https://www.youtube.com/watch?v=${encodeURIComponent(v.id)}`,embedUrl:`https://www.youtube-nocookie.com/embed/${encodeURIComponent(v.id)}`,previewUrl:v.snippet.thumbnails?.high?.url||v.snippet.thumbnails?.medium?.url,durationSeconds:videoDurationSeconds(v.contentDetails.duration)}));
+  return selectLearningCandidates(videos.map(youtubeApiCandidate),topic,locale);
 }
 async function freesound(topic: TopicCandidate, signal: AbortSignal): Promise<MediaItem[]> {
   const url=new URL("https://freesound.org/apiv2/search/text/");
@@ -65,15 +65,15 @@ async function artworks(topic: TopicCandidate, signal: AbortSignal): Promise<Med
 export async function discover(input: DiscoverInput, signal: AbortSignal): Promise<ProviderResult> {
   const {provider,topic,locale}=input;
   const start=Date.now();
-  if (provider==="youtube"&&!process.env.YOUTUBE_API_KEY||provider==="freesound"&&!process.env.FREESOUND_API_KEY) return {status:"unavailable",items:[],reason:"credentials",message:"This source has not been connected yet."};
+  if (provider==="freesound"&&!process.env.FREESOUND_API_KEY) return {status:"unavailable",items:[],reason:"credentials",message:"This source has not been connected yet."};
   try {
-    const items=await ({wikipedia:()=>wikipedia(topic,signal),youtube:()=>youtube(topic,locale,signal),freesound:()=>freesound(topic,signal),art:()=>artworks(topic,signal)})[provider]();
+    const items=await ({wikipedia:()=>wikipedia(topic,signal),youtube:()=>discoverYouTube(topic,locale,signal,stageSignal=>youtubeApi(topic,locale,stageSignal)),freesound:()=>freesound(topic,signal),art:()=>artworks(topic,signal)})[provider]();
     console.info(JSON.stringify({provider,durationMs:Date.now()-start,status:items.length?"ready":"empty"}));
     return {status:items.length?"ready":"empty",items};
   } catch(error) {
     const timeout = signal.aborted;
-    const reason = timeout?"timeout":(error instanceof ProviderError||error instanceof WikipediaError)?error.reason:"network";
+    const reason = timeout?"timeout":(error instanceof ProviderError||error instanceof WikipediaError||error instanceof YouTubeError)?error.reason:"network";
     console.info(JSON.stringify({provider,durationMs:Date.now()-start,status:"error",reason}));
-    return {status:reason==="quota"?"unavailable":"error",items:[],reason,retryAfter:error instanceof WikipediaError?error.retryAfter:undefined,message:timeout?"This source took too long. Try it again.":error instanceof ProviderError?error.message:"This source could not be reached. Try again shortly."};
+    return {status:["quota","setup","credentials"].includes(reason)?"unavailable":"error",items:[],reason,retryAfter:error instanceof WikipediaError?error.retryAfter:undefined,message:timeout?"This source took too long. Try it again.":error instanceof ProviderError||error instanceof YouTubeError?error.message:"This source could not be reached. Try again shortly."};
   }
 }

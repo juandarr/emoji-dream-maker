@@ -5,12 +5,13 @@ import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, getClientRect, 
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { AnimatePresence } from "motion/react";
 import { ArrowRight, ChevronLeft, ChevronRight, Compass, Grid2X2, Heart, History, List, Moon, Orbit, Search, Shuffle, Trash2, X } from "lucide-react";
-import { catalog, categories, constellationPositions, emojiById, searchCatalog } from "@/lib/catalog";
+import { catalog, defaultTopic, categories, constellationPositions, emojiById, searchCatalog } from "@/lib/catalog";
 import type { ConstellationPosition } from "@/lib/catalog";
 import { messages } from "@/lib/i18n";
 import { discoveryKey, initialPreferences, readPreferences, remember, savePreferences } from "@/lib/storage";
 import type { Preferences } from "@/lib/storage";
 import type { Discovery, EmojiRecord, Locale, TopicCandidate } from "@/lib/types";
+import { loadVideos } from "@/lib/video-prefetch";
 import Gallery from "./Gallery";
 import BlackHole from "./BlackHole";
 
@@ -58,6 +59,12 @@ export default function Explorer() {
   const pages=Math.max(1,Math.ceil(matches.length/48));
   const visible=matches.slice(Math.min(page,pages-1)*48,(Math.min(page,pages-1)+1)*48);
   const positions=constellationPositions(visible);
+  useEffect(()=>{
+    if(!selected)return;
+    const controller=new AbortController();
+    void loadVideos(selected.id,defaultTopic(selected,locale),locale,controller.signal).catch(()=>{});
+    return ()=>controller.abort();
+  },[selected,locale]);
   const choose=(emoji:EmojiRecord)=>{setSelected(emoji);setVariant(null);};
   const open=useCallback((emoji:EmojiRecord,glyph?:string,topic?:TopicCandidate)=>setGallery({emoji,glyph:glyph||emoji.glyph,topic,key:Date.now()}),[]);
   const close=useCallback(()=>setGallery(null),[]);

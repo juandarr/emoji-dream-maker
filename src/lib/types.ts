@@ -19,6 +19,6 @@ export type MediaItem = {
   durationSeconds?: number;
 };
 export type ProviderStatus = "loading" | "ready" | "empty" | "unavailable" | "error";
-export type ProviderResult = { status: ProviderStatus; items: MediaItem[]; message?: string; retryAfter?: number; reason?: "credentials" | "quota" | "timeout" | "network" };
+export type ProviderResult = { status: ProviderStatus; items: MediaItem[]; message?: string; retryAfter?: number; reason?: "credentials" | "setup" | "quota" | "timeout" | "network" };
 export type Discovery = { emojiId: string; topic: TopicCandidate; at: number };
 export type DiscoverInput = { emojiId: string; locale: Locale; topic: TopicCandidate; provider: Exclude<Provider, "giphy"> };

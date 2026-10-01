@@ -5,6 +5,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { ArrowUpRight, BookOpen, Check, ChevronRight, Heart, LoaderCircle, Music2, Palette, Play, Search, Sparkles, X } from "lucide-react";
 import WikipediaContext from "./WikipediaContext";
 import VideoPlayer from "./VideoPlayer";
+import { loadVideos } from "@/lib/video-prefetch";
+import { videoKey } from "@/lib/video-key";
 import { defaultTopic } from "@/lib/catalog";
 import { messages } from "@/lib/i18n";
 import { searchGiphy } from "@/lib/giphy";
@@ -34,7 +36,7 @@ function MediaSection({provider,result,locale,retry,reduced,onPlay}:{provider:Pr
   const titles={wikipedia:t.context,youtube:t.watchLearn,giphy:t.gifs,freesound:t.listen,art:t.art};
   const icons={wikipedia:BookOpen,youtube:Play,giphy:Sparkles,freesound:Music2,art:Palette};
   const Icon=icons[provider];
-  const message=result.status==="empty"?(provider==="youtube"?t.noLearningVideos:t.noMedia):result.reason==="credentials"?t.credentials:result.reason==="quota"?t.quota:result.reason==="timeout"?t.timeout:t.network;
+  const message=result.status==="empty"?(provider==="youtube"?t.noLearningVideos:t.noMedia):result.reason==="setup"?t.videoSetup:result.reason==="credentials"?t.credentials:result.reason==="quota"?t.quota:result.reason==="timeout"?t.timeout:t.network;
   return <section className={`media-section ${provider}-section`} aria-label={titles[provider]} aria-busy={result.status==="loading"}>
     <div className="section-heading"><h3><Icon size={17}/>{titles[provider]}</h3>{provider==="giphy"&&<a className="giphy-credit" href="https://giphy.com" target="_blank" rel="noopener noreferrer">Powered By <strong>GIPHY</strong><span className="giphy-bars" aria-hidden="true"/></a>}</div>
     {provider==="youtube"&&result.status==="ready"&&<p className="video-section-hint">{t.learningVideosHint}</p>}
@@ -57,7 +59,6 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
   const [searching,setSearching]=useState(false);
   const [subjectResults,setSubjectResults]=useState<TopicCandidate[]|null>(null);
   const dialog=useRef<HTMLDivElement>(null);
-  const requestGeneration=useRef(0);
   const controllers=useRef(new Map<Provider,AbortController>());
   const subjectController=useRef<AbortController|null>(null);
   const discovery:Discovery={emojiId:emoji.id,topic,at:Date.now()};
@@ -95,31 +96,37 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
   },[emoji.id,locale,initialTopic]);
 
   const loadSource=useCallback(async(provider:Provider)=>{
-    const generation=requestGeneration.current;
     controllers.current.get(provider)?.abort();
     const controller=new AbortController(); controllers.current.set(provider,controller);
     setResults(r=>({...r,[provider]:loading}));
-    const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(8000)]);
+    const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(provider==="youtube"?18_000:8000)]);
     try {
       let result:ProviderResult;
-      if(provider==="giphy")result=await searchGiphy(topic.query,locale,signal);
+      if(provider==="youtube")result=await loadVideos(emoji.id,topic,locale,signal);
+      else if(provider==="giphy")result=await searchGiphy(topic.query,locale,signal);
       else{
         const response=await fetch("/api/discover",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({emojiId:emoji.id,locale,topic,provider}),signal});
         if(!response.ok)throw new Error("Unavailable"); result=await response.json();
       }
-      if(!controller.signal.aborted&&generation===requestGeneration.current)setResults(r=>({...r,[provider]:result}));
+      if(!controller.signal.aborted&&controllers.current.get(provider)===controller)setResults(r=>({...r,[provider]:result}));
     }catch{
-      if(!controller.signal.aborted&&generation===requestGeneration.current)setResults(r=>({...r,[provider]:{status:"error",items:[],reason:signal.aborted?"timeout":"network"}}));
+      if(!controller.signal.aborted&&controllers.current.get(provider)===controller)setResults(r=>({...r,[provider]:{status:"error",items:[],reason:signal.aborted?"timeout":"network"}}));
     }
   },[emoji.id,locale,topic]);
+  const videoIdentity=videoKey(topic,locale);
+  const latestLoad=useRef(loadSource);
+  useEffect(()=>{latestLoad.current=loadSource;},[loadSource]);
+  useEffect(()=>{
+    void latestLoad.current("youtube");
+    const requests=controllers.current;
+    return ()=>{requests.get("youtube")?.abort();requests.delete("youtube");};
+  },[videoIdentity,emoji.id]);
   useEffect(()=>{
     if(resolving)return;
-    requestGeneration.current++;
-    setResults(emptyResults());
     onRemember({emojiId:emoji.id,topic,at:Date.now()});
-    providers.forEach(p=>void loadSource(p));
+    providers.filter(p=>p!=="youtube").forEach(p=>void loadSource(p));
     const requests=controllers.current;
-    return ()=>{requestGeneration.current++;requests.forEach(c=>c.abort());requests.clear();};
+    return ()=>{providers.filter(p=>p!=="youtube").forEach(p=>{requests.get(p)?.abort();requests.delete(p);});};
   },[resolving,loadSource,emoji.id,topic,onRemember]);
   async function findSubjects(event:React.FormEvent){
     event.preventDefault(); if(!query.trim())return;
@@ -133,8 +140,10 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
     }catch{if(!controller.signal.aborted)setSubjectResults([]);}finally{if(!controller.signal.aborted)setSearching(false);}
   }
   function navigate(next:TopicCandidate){
-    setActiveVideo(null);pauseMedia();requestGeneration.current++;controllers.current.forEach(c=>c.abort());
-    subjectController.current?.abort();setSearching(false);setResults(emptyResults());
+    const sameVideos=videoKey(next,locale)===videoIdentity;
+    setActiveVideo(null);pauseMedia();controllers.current.forEach((c,p)=>{if(!sameVideos||p!=="youtube")c.abort();});
+    subjectController.current?.abort();setSearching(false);
+    setResults(previous=>({...emptyResults(),...(sameVideos?{youtube:previous.youtube}:{})}));
     setTopic(next);setChanging(false);setSubjectResults(null);
     requestAnimationFrame(()=>{dialog.current?.scrollTo({top:0,behavior:"instant"});dialog.current?.querySelector<HTMLElement>("#gallery-title")?.focus();});
   }
@@ -148,7 +157,7 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
       {trail.length>0&&<nav className="exploration-trail" aria-label={locale==="es"?"Camino de exploración":"Exploration path"}><button onClick={goBack}>← {locale==="es"?"Volver a":"Back to"} {trail.at(-1)?.label}</button></nav>}
       <div className="topic-bar"><div>{alternatives.some(c=>c.label!==topic.label)&&<span>{t.alternative}</span>}{alternatives.filter(c=>c.label!==topic.label).map(c=><button key={c.wikiTitle||c.label} onClick={()=>chooseTopic(c)} disabled={resolving}>{c.label}<ChevronRight size={12}/></button>)}</div><button className="change-subject" onClick={()=>setChanging(!changing)} disabled={resolving}><Search size={14}/>{t.change}</button></div>
       <AnimatePresence>{changing&&<motion.div className="subject-picker" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}><form onSubmit={findSubjects}><Search size={17}/><input autoFocus maxLength={150} aria-label={t.subjectSearch} placeholder={t.subjectSearch} value={query} onChange={e=>setQuery(e.target.value)}/><button className="primary-button" disabled={searching||!query.trim()}>{searching?<LoaderCircle size={16} className="spin"/>:t.find}</button></form>{subjectResults&&<div className="subject-results" aria-label={t.results}>{subjectResults.length?subjectResults.map(c=><button onClick={()=>chooseTopic(c)} key={c.wikiTitle}><BookOpen size={14}/>{c.label}<ChevronRight size={14}/></button>):<p>{t.noSubjects}</p>}</div>}</motion.div>}</AnimatePresence>
-      <div className="gallery-body"><WikipediaContext key={`${topic.label}:${topic.language}`} result={resolving?loading:results.wikipedia} topic={topic} emojiLabel={emoji.labels[locale]} locale={locale} reduced={reduced} retry={()=>void loadSource("wikipedia")} change={()=>setChanging(true)} choose={chooseTopic}/>{providers.filter(p=>p!=="wikipedia").map(p=><MediaSection key={`${topic.label}:${topic.language}:${p}`} provider={p} result={resolving?loading:results[p]} locale={locale} reduced={reduced} retry={()=>void loadSource(p)} onPlay={item=>{pauseMedia();setActiveVideo(item);}}/>)}</div>
+      <div className="gallery-body"><WikipediaContext key={`${topic.label}:${topic.language}`} result={resolving?loading:results.wikipedia} topic={topic} emojiLabel={emoji.labels[locale]} locale={locale} reduced={reduced} retry={()=>void loadSource("wikipedia")} change={()=>setChanging(true)} choose={chooseTopic}/>{providers.filter(p=>p!=="wikipedia").map(p=><MediaSection key={`${topic.label}:${topic.language}:${p}`} provider={p} result={resolving&&p!=="youtube"?loading:results[p]} locale={locale} reduced={reduced} retry={()=>void loadSource(p)} onPlay={item=>{pauseMedia();setActiveVideo(item);}}/>)}</div>
       {activeVideo&&<VideoPlayer item={activeVideo} locale={locale} onClose={()=>setActiveVideo(null)}/>}
       <footer className="gallery-footer"><Check size={13}/>{t.stop}</footer>
     </motion.div>

@@ -4,7 +4,7 @@ import { searchGiphy } from "@/lib/giphy";
 import { defaultTopic, searchCatalog } from "@/lib/catalog";
 const emoji=searchCatalog("octopus")[0];const topic=defaultTopic(emoji,"en");
 const response=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status});
-beforeEach(()=>{clearProviderCache();vi.stubEnv("YOUTUBE_API_KEY","");vi.stubEnv("FREESOUND_API_KEY","");vi.stubEnv("NEXT_PUBLIC_GIPHY_API_KEY","");});
+beforeEach(()=>{clearProviderCache();vi.stubEnv("YOUTUBE_PROVIDER","api");vi.stubEnv("YOUTUBE_API_KEY","");vi.stubEnv("FREESOUND_API_KEY","");vi.stubEnv("NEXT_PUBLIC_GIPHY_API_KEY","");});
 afterEach(()=>{vi.unstubAllGlobals();vi.unstubAllEnvs();});
 describe("Wikipedia context",()=>{
   it("maps a corrected Spanish subject to its English language-link title",async()=>{
