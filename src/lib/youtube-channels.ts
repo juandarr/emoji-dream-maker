@@ -1,10 +1,15 @@
-// Public channel IDs checked through YouTube channels.list on 2026-10-01.
+// Public channel IDs checked through YouTube channels.list or search metadata on 2026-10-01.
 // Match IDs, never display names: a copied channel name must not receive this preference.
 export const learningChannels = new Set([
   "UCX6b17PVsYBQ0ip5gyeme-Q", // CrashCourse
   "UCAuUUnT6oDeKwE6v1NGQxug", // TED
   "UCZYTClx2T1of7BRZ86-8fow", // SciShow
   "UCsooa4yRKGN_zEE8iknghZA", // TED-Ed
+  "UCshVTOdmZLdLj8LTV1j_0uw", // Sé Curioso — TED-Ed (Spanish search metadata)
+  "UCDPk9MG2RexnOMGTD-YnSnA", // Nat Geo Animals (search metadata)
+  "UCXVCgDuD_QCkI7gTKU7-tpg", // Nat Geo Kids (search metadata)
+  "UCVoT8fZqVM44z6huWSaxUIQ", // National Geographic UK (search metadata)
+  "UC-3SbfTPJsL8fJAPKiVqBLg", // Deep Look (search metadata)
   "UCsXVk37bltHxD1rDPwtNM8Q", // Kurzgesagt – In a Nutshell
   "UCwmZiChSryoWQCZMIQezgTg", // BBC Earth
   "UCWqPRUsJlZaDp-PVbqEch9g", // Smithsonian Channel

@@ -182,6 +182,33 @@ test("related source failure leaves the summary readable and can be retried",asy
   await expect(page.locator(".related-grid").getByRole("button",{name:"Ocean",exact:true})).toBeVisible();
 });
 
+test("three videos show within two seconds while Wikipedia is still resolving, without duplicate searches",async({page})=>{
+  let searches=0;
+  await page.route("**/api/related?**",route=>route.fulfill({json:{status:"ready",topics:[{label:"Octopus biology",query:"Octopus",englishQuery:"Octopus",language:"en",wikiTitle:"Octopus"}]}}));
+  await page.route("**/api/resolve?**",async route=>{
+    await new Promise(resolve=>setTimeout(resolve,4000));
+    await route.fulfill({json:{defaultTopic:{label:"Octopus",query:"Octopus",englishQuery:"Octopus",language:"en",wikiId:123,wikiTitle:"Octopus"},alternatives:[]}});
+  });
+  await page.route("**/api/discover",async route=>{
+    const input=route.request().postDataJSON();
+    if(input.provider!=="youtube")return route.fulfill({json:{status:"ready",items:[{id:"1",title:"Octopus",excerpt:"Octopus context.",sourceUrl:"https://en.wikipedia.org/wiki/Octopus",language:"en"}]}});
+    searches++;
+    await new Promise(resolve=>setTimeout(resolve,500));
+    await route.fulfill({json:{status:"ready",items:[1,2,3].map(i=>({id:`lesson-${i}`,title:`Octopus lesson ${i}`,sourceUrl:`https://www.youtube.com/watch?v=lesson-${i}`,embedUrl:`https://www.youtube-nocookie.com/embed/lesson-${i}`}))}});
+  });
+  await page.getByRole("textbox",{name:/Search a word/}).fill("octopus");await clickEmoji(page,"octopus");
+  await expect.poll(()=>searches).toBe(1); // Starts on selection, before opening.
+  const start=Date.now();
+  await page.getByRole("button",{name:"Open portal",exact:true}).first().click();
+  await expect(page.locator(".video-card")).toHaveCount(3,{timeout:1900});
+  expect(Date.now()-start).toBeLessThan(2000);
+  await expect(page.getByRole("button",{name:"Save discovery",exact:true})).toBeEnabled({timeout:6000});
+  expect(searches).toBe(1); // Wikipedia enrichment did not reset the video cards.
+  await expect(page.locator(".video-card")).toHaveCount(3);
+  await page.getByRole("button",{name:"Octopus biology",exact:true}).click();
+  await expect(page.locator(".video-card")).toHaveCount(3);
+  expect(searches).toBe(1);
+});
 test("learning video opens a large autoplay popup and closes without losing the discovery",async({page})=>{
   await page.route("**/api/discover",async route=>{
     const input=route.request().postDataJSON();

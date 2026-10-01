@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { learningVideoQuery, selectLearningVideos, videoDurationSeconds } from "@/lib/youtube-selection";
+import { learningVideoQuery, selectSearchLearningCandidates, youtubeApiCandidate, selectLearningVideos, videoDurationSeconds } from "@/lib/youtube-selection";
 import type { YouTubeVideo } from "@/lib/youtube-selection";
 
 const topic = { label: "Octopus", query: "Octopus", englishQuery: "Octopus", language: "en" as const };
@@ -46,6 +46,12 @@ describe("educational video selection", () => {
   it("returns fewer than three instead of filling with unsuitable videos", () => {
     expect(select([video("good"), video("bad", "Octopus prank")])).toEqual(["good"]);
   });
+  it("screens sensational expert-mystery titles and AI disclosures beyond the opening description", () => {
+    const disclosed = video("disclosed"); disclosed.snippet.description += " Context.".repeat(100) + " Created with AI.";
+    expect(select([disclosed])).toEqual([]);
+    const painting = { ...topic, label: "Painting", query: "Painting", englishQuery: "Painting" };
+    expect(selectLearningVideos([video("mystery", "Art Historians Still Can't Explain This Painting")], painting, "en")).toEqual([]);
+  });
   it("supports Spanish accents, full compound subjects and English article equivalents", () => {
     const spanish = { label: "Nota musical", query: "Nota musical", englishQuery: "Musical note", language: "es" as const };
     const note = video("note", "¿Qué es una nota musical? Explicación"); note.snippet.defaultAudioLanguage = "es";
@@ -74,6 +80,11 @@ describe("educational video selection", () => {
     const unknown = video("unknown"); unknown.statistics = { viewCount: "20", likeCount: "1" };
     educator.statistics = undefined;
     expect(select([popular, unknown, educator])).toEqual(["educator", "viral"]);
+  });
+  it("keeps three established lessons ahead of weaker channels just to vary creators", () => {
+    const videos = [video("one", undefined, "UCsooa4yRKGN_zEE8iknghZA"), video("two", undefined, "UCsooa4yRKGN_zEE8iknghZA"),
+      video("three", undefined, "UCsooa4yRKGN_zEE8iknghZA"), video("unknown")].map(youtubeApiCandidate);
+    expect(selectSearchLearningCandidates(videos, topic, "en").map(item => item.id)).toEqual(["one", "two", "three"]);
   });
   it("parses hours, minutes, seconds and invalid durations", () => {
     expect(videoDurationSeconds("PT1H2M3S")).toBe(3723); expect(videoDurationSeconds("PT90S")).toBe(90);
