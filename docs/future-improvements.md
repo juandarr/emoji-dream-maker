@@ -1,6 +1,6 @@
 # Dream Maker: future improvements and playground plan
 
-Planning date: October 2, 2026. Everything in this document is proposed; it is not implemented by this analysis. The [current architecture](architecture-overview.md) describes the existing system.
+Planning date: October 2, 2026. This document was written as a proposal. The first Playground MVP is now implemented: a fourth sidebar section, white canvas with wheel zoom, free panning, fullscreen focus, object and group resize/rotation, area selection with group dragging/deletion, and a floating clickable/draggable emoji picker, bilingual search/filter/sorting, instance meaning/note/role/variant editing, labeled relationships, a single named scene, undo/redo, IndexedDB autosave, JSON import/export and an editable brief. OpenRouter generates messages, poems, stories, lyrics, image prompts and storyboards as text, with local run snapshots and bounded single-process submission controls. See the [setup and limits](../README.md#use-the-playground). Multiple boards/scenes, durable jobs and rendered media remain future milestones. The [current architecture](architecture-overview.md) describes the existing system.
 
 ## 1. Recommended direction
 

@@ -5,7 +5,7 @@ A personal emoji explorer: bilingual keyword search, a cosmic constellation, and
 ## Architecture and future planning
 
 - [Current architecture overview](docs/architecture-overview.md): frameworks, components, request flow, domain models, persistence, caches, provider boundaries, and diagrams.
-- [Future improvements and playground plan](docs/future-improvements.md): an emoji composition editor, proposed storage and generation models, staged delivery, and other improvements. This is a planning document; its proposed features are not implemented.
+- [Future improvements and playground plan](docs/future-improvements.md): an emoji composition editor, proposed storage and generation models, staged delivery, and other improvements. The initial Playground is now implemented; this document also describes later milestones.
 
 ## Version waypoints
 
@@ -38,6 +38,37 @@ npm run dev
 ```
 
 Open [http://127.0.0.1:3000](http://127.0.0.1:3000). The server binds to your local computer. Wikipedia and public-domain artworks require no API keys. Use any provider keys you already have; the app remains usable with unavailable-source messages when optional sources are not connected.
+
+## Use the Playground
+
+**Playground** is a fourth sidebar section alongside Discover, Favorites and History. Start with a blank white canvas. Open **Add emoji** for the floating searchable picker, search emojis in English or Spanish, filter by category, and sort by suggested order, name or Unicode order. Click/tap to add, or drag an emoji onto the canvas. Each instance can be moved, duplicated, deleted, given its own meaning, note, role and appearance. Click the painted shape of an object to select it; click empty canvas space, click the object again or press Esc to deselect. Tab still moves keyboard focus without adding an object outline; Enter/Space toggles selection. Selection adds a gentle glow, a two-pixel dashed frame and a small delete button. Dragging keeps selected objects selected, with their frame and controls following the movement; dragging an unselected object starts on its painted shape or a small allowance around its outer edge and leaves it unselected; distant transparent corners and enclosed holes act as canvas space; arrow keys nudge a focused instance, and Delete/Backspace removes a selected object. Scroll over the canvas to zoom at the pointer, and drag empty space to pan in any direction. Canvas emojis use the locally bundled [Noto Color Emoji 2.051 vector font](https://github.com/googlefonts/noto-emoji/tree/v2.051), preserving the original Noto artwork, colors and gradients. The COLRv1 outlines render at their actual displayed size to stay sharp on zoom and high-density screens. Glyphs, chosen skin tones and meanings remain unchanged; unsupported browsers or imported glyphs fall back to system emoji. **Fit objects in view** brings the scene back; zoom stops when an emoji fills the shorter canvas dimension. **Enter fullscreen** opens a focused workspace with the same floating picker and editing controls. The picker stays open after click, tap and drag additions, preserving its search, filters and scroll position; click outside it, use × or press Esc to close it. On touch screens, tap to add, swipe the picker to scroll, or hold an emoji briefly before dragging it out. Pointer grabs have a modest outer-edge allowance (about 12% wider at normal size, capped at 2–6 screen pixels for mouse/pen or 4–10 for touch). Enclosed holes remain empty, actual painted overlap takes priority, and area selection stays precise. Select an object to reveal the bottom-right resize handle and upper rotation handle. Resize preserves proportions and re-renders the vector font at its new size. **Select area** changes empty-space dragging to rectangle selection; Shift-drag is a shortcut, and Shift-click adds or removes individual emojis from the selection. Any painted part touched by the area selects its object, including edge contact. Transparent corners and holes, shadows and selection padding do not count. Holding Shift shows the standard arrow cursor inside the canvas; releasing it restores the current tool cursor. Drag anywhere inside the selection frame to move a group; its handles resize the whole arrangement around its center or rotate both positions and artwork together. Individual and group frames turn with the artwork; their rotation and northwest–southeast resize controls follow the frame, with the resize cursor matching its angle. The trash button or Delete/Backspace removes the selection and its relationships. Arrow keys on a resize/rotation handle adjust size or angle (Shift uses 15° rotation steps). Escape cancels an in-progress transform. Size and rotation are saved and included in JSON exports; older boards open at their original size and angle. Each completed drag, resize, rotation or group deletion is one undo step. The selected emoji in Discover also has **Add to playground**, preserving its chosen appearance.
+
+The whole board is one named scene, limited to 80 symbols. Add explicit labeled relationships from the selected symbol to another. The meaning panel compiles the chosen ideas and relationships into an editable brief. Coordinates are visual placement; they do not invent relationships or narrative order. Copying the brief works without AI credentials.
+
+The active board and last ten generation runs autosave in IndexedDB, independently of explorer preferences. Switching tabs preserves in-progress requests. Export/import a versioned JSON board for backup; imports enforce size, instance and relationship integrity limits. Failed storage leaves the board available for the session and export; an unreadable saved board is preserved until you deliberately start fresh or import a replacement. Clearing and importing are undoable. Multiple named boards, scene ordering and cross-tab conflict resolution are later work.
+
+### Connect OpenRouter
+
+Add these private server settings to `.env.local`, then restart `npm run dev`:
+
+```dotenv
+OPENROUTER_API_KEY=your-key-here
+OPENROUTER_MODEL=openrouter/free
+OPENROUTER_REASONING_EFFORT=default
+OPENROUTER_MAX_COMPLETION_TOKENS=8192
+# Optional: comma-separated model IDs available to your account.
+# OPENROUTER_MODELS=provider/model-one,provider/model-two
+```
+
+The default [OpenRouter free-model router](https://openrouter.ai/openrouter/free) selects an available free model. You can choose your own text model or configure an allowlist with `OPENROUTER_MODELS`. The UI exposes model IDs and connection configuration, never the key. **Check connection** checks server configuration; it does not spend credits or validate the key with the provider. Never put a private key in `NEXT_PUBLIC_` variables.
+
+Choose a model in **Text model**, then a **Reasoning effort** (Model default, Low, Medium or High). The picker uses your `OPENROUTER_MODELS` allowlist; without it, `OPENROUTER_MODEL` supplies the single choice. An explicit reasoning effort is sent using OpenRouter’s unified `reasoning.effort` and requires a provider that supports those settings. `OPENROUTER_REASONING_EFFORT` sets the initial effort. Completion tokens include both internal reasoning and the visible answer; the old 800-token cap could produce no visible answer when a reasoning model exhausted its budget. The default total cap is now 8,192, configurable through `OPENROUTER_MAX_COMPLETION_TOKENS` (1,024–16,384).
+
+For the current free Space Bunny experiment, set `OPENROUTER_MODELS=stealth/space-bunny-alpha,openrouter/free` and `OPENROUTER_REASONING_EFFORT=high`. As of October 2, 2026, [Space Bunny Alpha](https://openrouter.ai/stealth/space-bunny-alpha) supports High reasoning and is scheduled to leave OpenRouter on October 5, 2026. It is an experimental option, not a permanent default for this repository. If switching to the free-model router, use Model default when the selected route does not support explicit reasoning. No automatic fallback or resubmission happens.
+
+Choose a poem, short story, message, original song lyrics, image prompt or three-scene video storyboard, plus output language and tone. **Generate** sends the selected meanings and authored interpretation through the server using OpenRouter's [chat completions API](https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion). This first version generates text: lyrics are not synthesized audio, and image prompts/storyboards do not render image/video assets. Results remain editable and copyable, with their model, token usage and available cost metadata. The input snapshot and reasoning setting are retained, and changing meanings/intent/relationships flags older results; moving an emoji alone does not. Request progress, success and errors appear beside Generate; a finished request scrolls to its result while Playground is visible. **View latest result** also takes you there.
+
+Requests have a 120-second provider deadline, a default maximum of 8,192 total completion tokens, two concurrent requests and six deliberate submissions per minute per server process. Set a budget on your OpenRouter key before selecting paid models. Idempotency deduplicates identical request IDs in the same process for 30 minutes (up to 100 entries), including known failures and unknown outcomes. No automatic retries occur. Reloading an unfinished request marks its outcome unknown; check OpenRouter activity before submitting a new request. This is a local personal experiment: there is no authentication, durable server job store, restart reconciliation or multi-instance deduplication. Keep the server bound to localhost.
 
 ## Connect optional media sources
 
@@ -111,6 +142,14 @@ Click an image for the large viewer. Browse with next/previous buttons or arrow 
 
 Searches expand selected concepts into visual associations, then check museum titles, subject tags, and descriptions. Artist-name hits, unrelated substrings, and known homonyms are filtered. Changed subjects replace the original emoji associations. Results are never filled with unrelated images just to reach five. See [selection and live verification](docs/art-review.md) for source contracts, current limitations, and screenshots.
 
-This is a personal local MVP. Live relevance varies, and empty results are honest. Public deployment, accounts, generated media, combinations, and Jev-assisted search are future work. No deployment is performed by this project.
+This is a personal local MVP. Live relevance varies, and empty results are honest. Public deployment, accounts, rendered media generation, and Jev-assisted search are future work. Emoji compositions and optional text generation are available in Playground. No deployment is performed by this project.
 
 See [the application review](docs/application-review.md) for fixes, verification, and measured local provider timings.
+
+## Emoji artwork attribution
+
+Playground uses Google’s unmodified Noto Color Emoji 2.051 COLRv1 font, under the
+[SIL Open Font License 1.1](https://openfontlicense.org/). The font and license are
+bundled in `public/emoji/noto/`, with pinned source and checksum in its README.
+This is the vector counterpart of the original system bitmap font, retaining its
+artwork and gradients. The picker includes the attribution link.
