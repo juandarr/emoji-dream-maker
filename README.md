@@ -49,7 +49,7 @@ Favorites, the last 50 journeys, language, view, and motion preferences stay in 
 
 ## Verify and build
 
-Version snapshots describe a specific tagged commit, including feature status, interface, services, verification, and limitations. See the [v0.1.0 snapshot](docs/releases/v0.1.0.md) and use the [release snapshot template](docs/releases/TEMPLATE.md) for future versions. The matching GitHub Release is attached to the `v0.1.0` tag.
+Version snapshots describe a specific tagged commit, including feature status, interface, services, verification, and limitations. See the [v0.2.0 snapshot](docs/releases/v0.2.0.md), the [v0.1.0 snapshot](docs/releases/v0.1.0.md), and the [release snapshot template](docs/releases/TEMPLATE.md). Matching GitHub Releases are attached to their existing version tags.
 
 ```sh
 npm run test
