@@ -16,7 +16,7 @@ async function open(page:Page) {
   await page.goto("/");await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-board")).toBeVisible();
 }
 async function picker(page:Page) {if(!await page.getByRole("textbox",{name:"Search emojis in English or Spanish"}).isVisible())await page.getByRole("button",{name:"Open emoji picker",exact:true}).click();}
-async function add(page:Page,query:string,label:string) {await picker(page);await page.getByRole("textbox",{name:"Search emojis in English or Spanish"}).fill(query);await page.getByRole("button",{name:`Add ${label}`,exact:true}).click();await page.locator(".pg-node").last().click();}
+async function add(page:Page,query:string,label:string) {await picker(page);await page.getByRole("textbox",{name:"Search emojis in English or Spanish"}).fill(query);await page.getByRole("button",{name:`Add ${label}`,exact:true}).click();await page.locator(".pg-node").last().focus();await page.keyboard.press("Enter");}
 test("board authoring, independent meanings, relationships, undo and reload",async({page})=>{
   await open(page);await expect(page.locator(".pg-board")).toHaveCSS("background-color","rgb(255, 255, 255)");
   await add(page,"red heart","red heart");await page.getByRole("button",{name:"Duplicate",exact:true}).click();

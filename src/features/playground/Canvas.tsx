@@ -9,7 +9,10 @@ import EmojiArtwork from "./emoji-artwork";
 import type {Locale} from "@/lib/types";
 import {fitCamera,GLYPH_SIZE,maxZoom,MIN_ZOOM,worldPoint,zoomAt,type Camera,type Point} from "./camera";
 
-import {intersectedNodes,resizeCursor,rotatePoint,selectionBounds,selectionFrame,transformNodes,type Bounds,type SelectionFrame} from "./transforms";
+import {resizeCursor,rotatePoint,selectionBounds,selectionFrame,transformNodes,type Bounds,type SelectionFrame} from "./transforms";
+
+import {emojiShape} from "./emoji-shape";
+import {pointInShape,shapeIntersectsArea,type GlyphShape} from "./shapes";
 
 export type CanvasGeometry={camera:Camera;width:number;height:number};
 type Props={board:Composition;locale:Locale;selectedIds:string[];onSelect:(ids:string[])=>void;onTransform:(nodes:BoardNode[])=>void;onRemove:(ids:string[])=>void;onAdd:()=>void;picker:ReactNode;overlay:ReactNode;toolbar:ReactNode;boardRef:React.RefObject<HTMLDivElement|null>;geometryRef:React.RefObject<CanvasGeometry>;pickerOpen:boolean;setPickerOpen:(value:boolean)=>void};
@@ -27,6 +30,30 @@ export default function Canvas({board,locale,selectedIds,onSelect,onTransform,on
   const [preview,setPreview]=useState<BoardNode[]|null>(null),[area,setArea]=useState<Bounds|null>(null),[selectMode,setSelectMode]=useState(false),[shiftPressed,setShiftPressed]=useState(false);
   const nodes=board.nodes.map(n=>preview?.find(p=>p.id===n.id)||n);
   const selected=nodes.filter(n=>selectedIds.includes(n.id));
+  const [shapes,setShapes]=useState<Map<string,GlyphShape>>(new Map()),[dragReady,setDragReady]=useState(false);
+  const glyphs=[...new Set(board.nodes.map(n=>n.glyph))].join("\u0000");
+  useEffect(()=>{
+    let active=true;
+    async function loadShapes(){
+      try{await document.fonts.load('32px "Playground Noto Emoji"',glyphs.replaceAll("\u0000",""));}catch{/* Shape the same fallback font as the displayed artwork if the font cannot load. */}
+      await document.fonts.ready;if(!active)return;
+      const family=getComputedStyle(boardRef.current!.querySelector(".pg-vector-glyph")??boardRef.current!).fontFamily;
+      const next=new Map<string,GlyphShape>();
+      for(const glyph of glyphs.split("\u0000").filter(Boolean)){const shape=emojiShape(glyph,family);if(shape)next.set(glyph,shape);}
+      setShapes(next);
+    }
+    void loadShapes();return()=>{active=false;};
+  },[glyphs,boardRef]);
+  function nodeShape(node:BoardNode){
+    const saved=shapes.get(node.glyph);if(saved)return saved;
+    const glyph=boardRef.current?.querySelector(".pg-vector-glyph");
+    return glyph?emojiShape(node.glyph,getComputedStyle(glyph).fontFamily):null;
+  }
+  function hitObject(p:Point){return [...nodes].reverse().find(n=>{const shape=nodeShape(n);return shape&&pointInShape(n,p,world,shape);});}
+  function insideSelection(p:Point){
+    if(!frame)return false;const local=rotatePoint({x:p.x-frame.center.x,y:p.y-frame.center.y},-frame.rotation);
+    return Math.abs(local.x)<=frame.width/2+8/cameraRef.current.zoom&&Math.abs(local.y)<=frame.height/2+8/cameraRef.current.zoom;
+  }
   function localPoint(client:Point):Point {const rect=boardRef.current!.getBoundingClientRect();return {x:client.x-rect.left,y:client.y-rect.top};}
   function point(client:Point):Point {return worldPoint(localPoint(client),cameraRef.current);}
   function selectObject(id:string,additive=false) {onSelect(additive?selectedIds.includes(id)?selectedIds.filter(v=>v!==id):[...selectedIds,id]:selectedIds.length===1&&selectedIds[0]===id?[]:[id]);}
@@ -35,7 +62,7 @@ export default function Canvas({board,locale,selectedIds,onSelect,onTransform,on
     e.stopPropagation();e.preventDefault();
     const group=node?(selectedIds.includes(node.id)&&selectedIds.length>1?selected:[node]):selected;
     const frame=selectionFrame(group,world);if(!frame)return;
-    (node||kind!=="move"?e.currentTarget:boardRef.current)?.focus({preventScroll:true});
+    (node?boardRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(node.id)}"]`):kind!=="move"?e.currentTarget:boardRef.current)?.focus({preventScroll:true});
     e.currentTarget.setPointerCapture(e.pointerId);
     const center=frame.center,p=point({x:e.clientX,y:e.clientY});
     gesture.current={id:e.pointerId,kind,start:p,nodes:group,preview:group,center,moved:false,keepSelection:kind!=="move"||!node||selectedIds.includes(node.id),lastAngle:Math.atan2(p.y-center.y,p.x-center.x),angle:0,element:e.currentTarget,clickId:node?.id??null,additive:e.shiftKey,frame};
@@ -142,29 +169,34 @@ export default function Canvas({board,locale,selectedIds,onSelect,onTransform,on
       if(fullscreen&&e.key==="Tab") {const focusable=Array.from(stageRef.current!.querySelectorAll<HTMLElement>('button:not(:disabled),input,select,[tabindex="0"]')).filter(el=>el.getClientRects().length);const first=focusable[0],last=focusable.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}
     }}>
     <div className="pg-space-toolbar"><button ref={pickerButton} className="pg-picker-toggle" aria-label={t.openPicker} aria-expanded={pickerOpen} onClick={()=>setPickerOpen(!pickerOpen)}><Plus size={17}/><span>{t.addEmoji}</span></button><div className="pg-space-history">{toolbar}</div><div className="pg-view-tools"><button className="pg-selection-tool" aria-label={t.selectArea} title={t.selectAreaHint} aria-pressed={selectMode} onClick={()=>setSelectMode(!selectMode)}><MousePointer2 size={17}/><span>{t.selectArea}</span></button><button aria-label={t.zoomOut} title={t.zoomOut} disabled={camera.zoom<=MIN_ZOOM} onClick={()=>zoomButton(1/1.3)}><ZoomOut size={17}/></button><output aria-label={t.zoomLevel}>{Math.round(camera.zoom*100)}%</output><button aria-label={t.zoomIn} title={t.zoomIn} disabled={camera.zoom>=maxZoom(size.width,size.height)} onClick={()=>zoomButton(1.3)}><ZoomIn size={17}/></button><button aria-label={t.fit} title={t.fit} onClick={fit}><Scan size={17}/></button><button aria-label={fullscreen?t.exitFullscreen:t.fullscreen} title={fullscreen?t.exitFullscreen:t.fullscreen} onClick={()=>void toggleFullscreen()}>{fullscreen?<Minimize size={17}/>:<Expand size={17}/>}</button></div></div>
-    <div ref={el=>{setNodeRef(el);boardRef.current=el;}} role="region" aria-label={t.canvas} tabIndex={0} className={`pg-board ${isOver?"over":""} ${panning?"panning":""} ${selectMode?"select-mode":""} ${shiftPressed?"shift-select":""}`} onPointerEnter={e=>setShiftPressed(e.shiftKey)} onPointerDown={e=>{
-      if(e.button!==0||!e.isPrimary||gesture.current)return;e.preventDefault();e.currentTarget.focus({preventScroll:true});e.currentTarget.setPointerCapture(e.pointerId);
+    <div ref={el=>{setNodeRef(el);boardRef.current=el;}} role="region" aria-label={t.canvas} tabIndex={0} data-shapes-ready={board.nodes.every(n=>shapes.has(n.glyph))} className={`pg-board ${dragReady?"drag-ready":""} ${isOver?"over":""} ${panning?"panning":""} ${selectMode?"select-mode":""} ${shiftPressed?"shift-select":""}`} onPointerEnter={e=>setShiftPressed(e.shiftKey)} onPointerLeave={()=>setDragReady(false)} onPointerDown={e=>{
+      if(e.button!==0||!e.isPrimary||gesture.current)return;
+      const p=point({x:e.clientX,y:e.clientY}),node=hitObject(p);
+      if(node){startObject(e,node,"move");return;}
+      if(!e.shiftKey&&insideSelection(p)){startObject(e,null,"move");return;}
+      e.preventDefault();e.currentTarget.focus({preventScroll:true});e.currentTarget.setPointerCapture(e.pointerId);
       const selecting=selectMode||e.shiftKey;pan.current={id:e.pointerId,start:{x:e.clientX,y:e.clientY},camera:cameraRef.current,moved:false,selecting,additive:e.shiftKey,selection:selectedIds};
       if(selecting){const p=localPoint({x:e.clientX,y:e.clientY});setArea({left:p.x,right:p.x,top:p.y,bottom:p.y});}else setPanning(true);
     }} onPointerMove={e=>{
-      const g=pan.current;if(g?.id!==e.pointerId)return;
+      if(gesture.current){if(gesture.current.element===e.currentTarget)moveObject(e);return;}
+      const g=pan.current;
+      if(g?.id!==e.pointerId){const p=point({x:e.clientX,y:e.clientY});setDragReady(!!hitObject(p)||!e.shiftKey&&insideSelection(p));return;}
       const dx=e.clientX-g.start.x,dy=e.clientY-g.start.y;if(Math.hypot(dx,dy)>=6)g.moved=true;
       if(g.selecting){const a=localPoint(g.start),b=localPoint({x:e.clientX,y:e.clientY});setArea({left:Math.min(a.x,b.x),right:Math.max(a.x,b.x),top:Math.min(a.y,b.y),bottom:Math.max(a.y,b.y)});}
       else setCamera({...g.camera,x:g.camera.x+dx,y:g.camera.y+dy});
     }} onPointerUp={e=>{
+      if(gesture.current?.element===e.currentTarget){finishObject(e);return;}
       const g=pan.current;if(g?.id!==e.pointerId)return;pan.current=null;setPanning(false);setArea(null);
       // Account for subpixel layout rounding at the painted edge; tolerance stays 1/32 CSS px.
-      if(g.selecting&&g.moved){const a=point(g.start),b=point({x:e.clientX,y:e.clientY});const ids=intersectedNodes(board.nodes,{left:Math.min(a.x,b.x),right:Math.max(a.x,b.x),top:Math.min(a.y,b.y),bottom:Math.max(a.y,b.y)},world,1/(32*cameraRef.current.zoom));onSelect(g.additive?[...new Set([...g.selection,...ids])]:ids);}
+      if(g.selecting&&g.moved){const a=point(g.start),b=point({x:e.clientX,y:e.clientY});const area={left:Math.min(a.x,b.x),right:Math.max(a.x,b.x),top:Math.min(a.y,b.y),bottom:Math.max(a.y,b.y)};const ids=board.nodes.filter(n=>{const shape=nodeShape(n);return shape&&shapeIntersectsArea(n,area,world,shape,1/(32*cameraRef.current.zoom));}).map(n=>n.id);onSelect(g.additive?[...new Set([...g.selection,...ids])]:ids);}
       else if(!g.moved)onSelect([]);
       if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);
-    }} onPointerCancel={()=>{pan.current=null;setPanning(false);setArea(null);}} onLostPointerCapture={()=>{pan.current=null;setPanning(false);setArea(null);}}>
-      {screenFrame&&selectionVisible&&<div className="pg-selection-drag" aria-hidden="true" style={frameStyle}
-        onPointerDown={e=>{if(!e.shiftKey)startObject(e,null,"move");}} onPointerMove={moveObject} onPointerUp={e=>finishObject(e)} onPointerCancel={e=>finishObject(e,true)} onLostPointerCapture={e=>finishObject(e,true)}/>}
+    }} onPointerCancel={e=>{if(gesture.current?.element===e.currentTarget)finishObject(e,true);pan.current=null;setPanning(false);setArea(null);}} onLostPointerCapture={e=>{if(gesture.current?.element===e.currentTarget)finishObject(e,true);pan.current=null;setPanning(false);setArea(null);}}>
+      {screenFrame&&selectionVisible&&<div className="pg-selection-drag" aria-hidden="true" style={frameStyle}/>}
       {/* Render at display size: scaling a cached composited layer can blur even vector artwork. */}
       <div className="pg-world" style={{width:world.width*camera.zoom,height:world.height*camera.zoom,transform:`translate(${camera.x}px, ${camera.y}px)`}}>
         <svg className="pg-edges" aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><marker id="pg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a68cf4"/></marker></defs>{board.edges.map(e=>{const a=nodes.find(n=>n.id===e.source)!,b=nodes.find(n=>n.id===e.target)!;return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#b9a4e0" strokeWidth=".35" markerEnd="url(#pg-arrow)"/>;})}</svg>
         {nodes.map(node=><button key={node.id} data-id={node.id} data-glyph={node.glyph} data-scale={node.scale} data-rotation={node.rotation} className={`pg-node ${selectedIds.includes(node.id)?"selected":""} ${objectDragging&&preview?.some(p=>p.id===node.id)?"dragging":""}`} aria-label={`${node.glyph} ${node.meaning}`} aria-pressed={selectedIds.includes(node.id)} style={{width:60*camera.zoom*node.scale,height:60*camera.zoom*node.scale,left:`${node.x}%`,top:`${node.y}%`,transform:`translate(-50%, -50%) rotate(${node.rotation}deg)`}}
-          onPointerDown={e=>startObject(e,node,"move")} onPointerMove={moveObject} onPointerUp={e=>finishObject(e)} onPointerCancel={e=>finishObject(e,true)} onLostPointerCapture={e=>finishObject(e,true)}
           onClick={e=>{if(e.detail===0)selectObject(node.id,e.shiftKey);}}
           onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();selectObject(node.id,e.shiftKey);}else if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){e.preventDefault();const group=selectedIds.includes(node.id)?selected:[node];onTransform(transformNodes(group,world,{x:0,y:0},{dx:e.key==="ArrowRight"?world.width*.02:e.key==="ArrowLeft"?-world.width*.02:0,dy:e.key==="ArrowDown"?world.height*.02:e.key==="ArrowUp"?-world.height*.02:0}));}}}>
           <span style={{fontSize:GLYPH_SIZE*camera.zoom*node.scale}}><EmojiArtwork glyph={node.glyph}/></span>

@@ -349,6 +349,8 @@
 /* Selection tools live at screen size while vector glyphs render at their actual size. */
 .pg-view-tools button[aria-pressed="true"] {background:#e9dcf7;color:#684289}
 .pg-stage .pg-board.select-mode {cursor:crosshair}
+.pg-stage .pg-board.drag-ready {cursor:grab}
+.pg-world .pg-node {cursor:inherit}
 .pg-selection-area,.pg-group-bounds {position:absolute;pointer-events:none;border:1px solid #9e76c7;z-index:3}
 .pg-selection-area {background:#aa80d31a}
 .pg-selection-bounds {border:2px dashed #a57ecb;border-radius:4px;transform-origin:center;box-shadow:0 0 0 1px #ffffffa6}

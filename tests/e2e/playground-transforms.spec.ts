@@ -121,12 +121,12 @@ test("Shift shows the standard arrow on canvas and emojis, and resets on release
   await page.keyboard.down("Shift");await expect(canvas).toHaveCSS("cursor","default");await page.evaluate(()=>window.dispatchEvent(new Event("blur")));await expect(canvas).toHaveCSS("cursor","crosshair");await page.keyboard.up("Shift");
 });
 
-test("a narrow area touching the edge selects the emoji without enclosing it",async({page})=>{
+test("a narrow area touching painted artwork selects the emoji without enclosing it",async({page})=>{
   await open(page);await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();await expect(page.locator(".pg-stage")).toHaveClass(/is-fullscreen/);
   await page.getByRole("button",{name:"Select area",exact:true}).click();const node=page.locator(".pg-node").first();
   for(const zoomStep of [0,1]){
     if(zoomStep)await page.getByRole("button",{name:"Zoom in",exact:true}).click();
-    for(const overlap of [1,0]){
+    for(const overlap of [6,8]){
     const canvas=page.locator(".pg-board"),rect=await canvas.boundingBox();await canvas.click({position:{x:rect!.width-15,y:rect!.height-15}});
     const art=await node.locator(".pg-artwork").boundingBox();
     await page.mouse.move(art!.x-20,art!.y-20);await page.mouse.down();await page.mouse.move(art!.x+overlap,art!.y+art!.height+20,{steps:10});await page.mouse.up();
@@ -159,7 +159,7 @@ test("touch gets the same partial selection and rotating single-object frame",as
   try{
     await page.addInitScript(()=>Object.defineProperty(Element.prototype,"requestFullscreen",{value:undefined}));await open(page);await page.getByRole("button",{name:"Enter fullscreen",exact:true}).tap();
     await page.getByRole("button",{name:"Select area",exact:true}).tap();const node=page.locator(".pg-node").first(),art=await node.locator(".pg-artwork").boundingBox(),cdp=await context.newCDPSession(page);
-    const start={x:art!.x-20,y:art!.y-20},end={x:art!.x+1,y:art!.y+art!.height+20};
+    const start={x:art!.x-20,y:art!.y-20},end={x:art!.x+6,y:art!.y+art!.height+20};
     await cdp.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[start]});for(let i=1;i<=10;i++)await cdp.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:start.x+(end.x-start.x)*i/10,y:start.y+(end.y-start.y)*i/10}]});await cdp.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});
     await expect(node).toHaveAttribute("aria-pressed","true");await expect(page.locator(".pg-selection-bounds")).toHaveCSS("border-top-style","dashed");await expect(page.locator(".pg-selection-bounds")).toHaveCSS("border-top-width","2px");
     const frame=await measureFrame(page),r=Math.hypot(frame.rotateX-frame.x,frame.rotateY-frame.y),angle=Math.atan2(frame.rotateY-frame.y,frame.rotateX-frame.x);
