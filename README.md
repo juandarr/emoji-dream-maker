@@ -41,11 +41,11 @@ Open [http://127.0.0.1:3000](http://127.0.0.1:3000). The server binds to your lo
 
 ## Use the Playground
 
-**Playground** is a fourth sidebar section alongside Discover, Favorites and History. Start with a blank white canvas, search emojis in English or Spanish, filter by category, and sort by suggested order, name or Unicode order. Click/tap to add, or drag an emoji onto the canvas. Each instance can be moved, duplicated, deleted, given its own meaning, note, role and appearance. Arrow keys nudge a focused instance; Delete removes it. A whole drag is one undo step. The selected emoji in Discover also has **Add to playground**, preserving its chosen appearance.
+**Playground** is a fourth sidebar section alongside Discover, Favorites and History. Start with a blank white canvas. Open **Add emoji** for the floating searchable picker, search emojis in English or Spanish, filter by category, and sort by suggested order, name or Unicode order. Click/tap to add, or drag an emoji onto the canvas. Each instance can be moved, duplicated, deleted, given its own meaning, note, role and appearance. Click an object to select it, click again or press Esc to deselect. Selection adds a gentle glow and a small delete button. Dragging moves the original object without selecting it; arrow keys nudge a focused instance, and Delete/Backspace removes a selected object. Scroll over the canvas to zoom at the pointer, and drag empty space to pan in any direction. Canvas emojis use the locally bundled [Noto Color Emoji 2.051 vector font](https://github.com/googlefonts/noto-emoji/tree/v2.051), preserving the original Noto artwork, colors and gradients. The COLRv1 outlines render at their actual displayed size to stay sharp on zoom and high-density screens. Glyphs, chosen skin tones and meanings remain unchanged; unsupported browsers or imported glyphs fall back to system emoji. **Fit objects in view** brings the scene back; zoom stops when an emoji fills the shorter canvas dimension. **Enter fullscreen** opens a focused workspace with the same floating picker and editing controls. On touch screens, tap to add, swipe the picker to scroll, or hold an emoji briefly before dragging it out. A whole drag is one undo step. The selected emoji in Discover also has **Add to playground**, preserving its chosen appearance.
 
 The whole board is one named scene, limited to 80 symbols. Add explicit labeled relationships from the selected symbol to another. The meaning panel compiles the chosen ideas and relationships into an editable brief. Coordinates are visual placement; they do not invent relationships or narrative order. Copying the brief works without AI credentials.
 
-The active board and last ten generation runs autosave in IndexedDB, independently of explorer preferences. Switching tabs preserves in-progress requests. Export/import a versioned JSON board for backup; imports enforce size, instance and relationship integrity limits. Failed storage leaves the board available for the session and export; an unreadable saved board is preserved until you deliberately start fresh or import a replacement. Clearing and importing are undoable. Multiple named boards, scene ordering, pan/zoom and cross-tab conflict resolution are later work.
+The active board and last ten generation runs autosave in IndexedDB, independently of explorer preferences. Switching tabs preserves in-progress requests. Export/import a versioned JSON board for backup; imports enforce size, instance and relationship integrity limits. Failed storage leaves the board available for the session and export; an unreadable saved board is preserved until you deliberately start fresh or import a replacement. Clearing and importing are undoable. Multiple named boards, scene ordering and cross-tab conflict resolution are later work.
 
 ### Connect OpenRouter
 
@@ -145,3 +145,11 @@ Searches expand selected concepts into visual associations, then check museum ti
 This is a personal local MVP. Live relevance varies, and empty results are honest. Public deployment, accounts, rendered media generation, and Jev-assisted search are future work. Emoji compositions and optional text generation are available in Playground. No deployment is performed by this project.
 
 See [the application review](docs/application-review.md) for fixes, verification, and measured local provider timings.
+
+## Emoji artwork attribution
+
+Playground uses Google’s unmodified Noto Color Emoji 2.051 COLRv1 font, under the
+[SIL Open Font License 1.1](https://openfontlicense.org/). The font and license are
+bundled in `public/emoji/noto/`, with pinned source and checksum in its README.
+This is the vector counterpart of the original system bitmap font, retaining its
+artwork and gradients. The picker includes the attribution link.

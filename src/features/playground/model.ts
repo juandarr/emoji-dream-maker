@@ -12,7 +12,7 @@ export type Composition = {
   intent: string; interpretation: string;
 };
 export const emptyComposition = (): Composition => ({ schemaVersion: 1, title: "", nodes: [], edges: [], intent: "", interpretation: "" });
-export const clamp = (n: number) => Math.min(94, Math.max(6, n));
+export const clamp = (n: number) => Math.min(100000, Math.max(-100000, n));
 export function createNode(emoji: EmojiRecord, locale: Locale, id: string, index: number, position?: {x:number;y:number}, glyph?: string): BoardNode {
   return { id, emojiId: emoji.id, glyph: glyph || emoji.glyph, label: emoji.labels[locale], meaning: defaultTopic(emoji, locale).label, note: "", role: "subject", x: clamp(position?.x ?? 20 + index % 5 * 15), y: clamp(position?.y ?? 24 + Math.floor(index / 5) % 4 * 18) };
 }
@@ -23,7 +23,7 @@ const id = (v: unknown): v is string => str(v, 100, true) && /^[\w-]+$/.test(v);
 export function parseComposition(value: unknown): Composition {
   if (!object(value) || value.schemaVersion !== 1 || !str(value.title, 120) || !str(value.intent, 1000) || !str(value.interpretation, 4000) || !Array.isArray(value.nodes) || value.nodes.length > NODE_LIMIT || !Array.isArray(value.edges) || value.edges.length > 160) throw new Error("Invalid board or unsupported version.");
   const nodes: BoardNode[] = value.nodes.map(n => {
-    if (!object(n) || !id(n.id) || !id(n.emojiId) || !str(n.glyph, 40, true) || !str(n.label, 150, true) || !str(n.meaning, 150, true) || !str(n.note, 500) || !["subject", "setting", "mood"].includes(String(n.role)) || typeof n.x !== "number" || !Number.isFinite(n.x) || n.x < 6 || n.x > 94 || typeof n.y !== "number" || !Number.isFinite(n.y) || n.y < 6 || n.y > 94) throw new Error("Invalid emoji instance.");
+    if (!object(n) || !id(n.id) || !id(n.emojiId) || !str(n.glyph, 40, true) || !str(n.label, 150, true) || !str(n.meaning, 150, true) || !str(n.note, 500) || !["subject", "setting", "mood"].includes(String(n.role)) || typeof n.x !== "number" || !Number.isFinite(n.x) || Math.abs(n.x) > 100000 || typeof n.y !== "number" || !Number.isFinite(n.y) || Math.abs(n.y) > 100000) throw new Error("Invalid emoji instance.");
     return { id:n.id, emojiId:n.emojiId, glyph:n.glyph, label:n.label, meaning:n.meaning, note:n.note, role:n.role as BoardNode["role"], x:n.x, y:n.y };
   });
   const ids = new Set(nodes.map(n => n.id));
