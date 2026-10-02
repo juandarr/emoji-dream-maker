@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowUpRight, X } from "lucide-react";
+import { ArrowUpRight, Maximize, X } from "lucide-react";
 import { messages } from "@/lib/i18n";
 import type { Locale, MediaItem } from "@/lib/types";
 import { loadYouTubePlayer } from "@/lib/youtube-player";
@@ -21,6 +21,9 @@ export default function VideoPlayer({ item, locale, onClose }: { item: MediaItem
   url.searchParams.set("rel", "0");
   url.searchParams.set("hl", locale);
   url.searchParams.set("enablejsapi", "1");
+  // Fullscreen belongs to the complete embed, rather than YouTube's internal
+  // video element, which can exclude its controls after they auto-hide.
+  url.searchParams.set("fs", "0");
   if (origin) url.searchParams.set("origin", origin);
   const embedURL = origin ? url.href : undefined;
 
@@ -30,6 +33,36 @@ export default function VideoPlayer({ item, locale, onClose }: { item: MediaItem
     node.showModal();
     setOrigin(window.location.origin);
     return () => { node.close(); previous?.focus({ preventScroll: true }); };
+  }, []);
+
+  useEffect(() => {
+    const stage = screen.current!;
+    let tabbing = false;
+    let tabTimer: ReturnType<typeof setTimeout>;
+    let focusTimer: ReturnType<typeof setTimeout>;
+    const keydown = (event: KeyboardEvent) => {
+      tabbing = event.key === "Tab";
+      clearTimeout(tabTimer);
+      tabTimer = setTimeout(() => { tabbing = false; }, 0);
+    };
+    const blur = () => {
+      // Cross-origin iframe clicks blur our window; their key events never
+      // bubble to the dialog. Keep pointer users' shortcuts on the wrapper,
+      // but let Tab users enter YouTube's controls for keyboard accessibility.
+      if (tabbing) return;
+      clearTimeout(focusTimer);
+      focusTimer = setTimeout(() => {
+        if (document.activeElement === iframe.current && dialog.current?.open) stage.focus({ preventScroll: true });
+      }, 0);
+    };
+    document.addEventListener("keydown", keydown, true);
+    window.addEventListener("blur", blur);
+    return () => {
+      clearTimeout(tabTimer);
+      clearTimeout(focusTimer);
+      document.removeEventListener("keydown", keydown, true);
+      window.removeEventListener("blur", blur);
+    };
   }, []);
 
   useEffect(() => {
@@ -75,19 +108,48 @@ export default function VideoPlayer({ item, locale, onClose }: { item: MediaItem
     }
   }
 
+  function seekBy(seconds: number) {
+    const current = player.current;
+    if (!current) return;
+    const duration = current.getDuration();
+    const time = Math.max(0, current.getCurrentTime() + seconds);
+    current.seekTo(duration > 0 ? Math.min(duration, time) : time, true);
+  }
+
   return <dialog ref={dialog} className="video-dialog" aria-labelledby="video-title" aria-describedby="video-controls-hint"
     onCancel={event => { event.preventDefault(); onClose(); }}
     onKeyDown={event => {
       const target = event.target as HTMLElement;
       if (!event.altKey && !event.ctrlKey && !event.metaKey && !target.closest("input, textarea, select, [contenteditable='true']")) {
-        if (event.code === "Space" || event.key === " ") {
+        const key = event.key.toLowerCase();
+        if (event.code === "Space" || event.key === " " || key === "k") {
           event.preventDefault();
           if (!event.repeat) togglePlayback();
           return;
         }
-        if (event.key.toLowerCase() === "f") {
+        if (key === "f") {
           event.preventDefault();
           if (!event.repeat) toggleFullscreen();
+          return;
+        }
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight" || key === "j" || key === "l") {
+          event.preventDefault();
+          seekBy(key === "j" ? -10 : key === "l" ? 10 : event.key === "ArrowLeft" ? -5 : 5);
+          return;
+        }
+        if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+          event.preventDefault();
+          const current = player.current;
+          if (current) current.setVolume(Math.max(0, Math.min(100, current.getVolume() + (event.key === "ArrowUp" ? 5 : -5))));
+          return;
+        }
+        if (key === "m") {
+          event.preventDefault();
+          const current = player.current;
+          if (current && !event.repeat) {
+            if (current.isMuted()) current.unMute();
+            else current.mute();
+          }
           return;
         }
       }
@@ -106,8 +168,8 @@ export default function VideoPlayer({ item, locale, onClose }: { item: MediaItem
       <div><span>{t.watchLearn}</span><h2 id="video-title">{item.title}</h2></div>
       <button className="icon-button" onClick={onClose} aria-label={t.closeVideo} autoFocus><X size={24}/></button>
     </header>
-    <div ref={screen} className="video-dialog-screen" tabIndex={-1}><iframe ref={iframe} src={embedURL} title={item.title}
-      allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin"/></div>
-    <footer className="video-dialog-footer"><div><span>{item.creator}</span><p id="video-controls-hint">{t.videoControlsHint}</p></div><a href={item.sourceUrl} target="_blank" rel="noopener noreferrer">{t.openYouTube}<ArrowUpRight size={14}/></a></footer>
+    <div ref={screen} className="video-dialog-screen" tabIndex={0} role="region" aria-label={item.title}><iframe ref={iframe} src={embedURL} title={item.title}
+      allow="autoplay; encrypted-media; picture-in-picture" referrerPolicy="strict-origin-when-cross-origin"/></div>
+    <footer className="video-dialog-footer"><div><span>{item.creator}</span><p id="video-controls-hint">{t.videoControlsHint}</p></div><div className="video-dialog-actions"><button className="icon-button" onClick={toggleFullscreen} aria-label={t.fullscreenVideo} title={t.fullscreenVideo}><Maximize size={18}/></button><a href={item.sourceUrl} target="_blank" rel="noopener noreferrer">{t.openYouTube}<ArrowUpRight size={14}/></a></div></footer>
   </dialog>;
 }

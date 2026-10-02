@@ -2,6 +2,14 @@ export type YouTubePlayer = {
   getPlayerState: () => number;
   playVideo: () => void;
   pauseVideo: () => void;
+  getCurrentTime: () => number;
+  getDuration: () => number;
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+  getVolume: () => number;
+  setVolume: (volume: number) => void;
+  isMuted: () => boolean;
+  mute: () => void;
+  unMute: () => void;
   destroy: () => void;
 };
 

@@ -535,28 +535,39 @@ test("artwork supports pointer-centered wheel zoom, maximum double-click zoom an
   await expect(popup.locator(".image-zoom-level")).toHaveText("100%");
 });
 
-async function stubKeyboardVideo(page: Page, delay = 0) {
+async function stubKeyboardVideo(page: Page, delay = 0, embed = "<p>Keyboard lesson</p>") {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.route("**/api/discover", async route => {
     if (route.request().postDataJSON().provider !== "youtube") return route.fallback();
     await route.fulfill({ json: { status: "ready", items: [{ id: "keys", title: "Keyboard lesson", creator: "Teacher", sourceUrl: "https://www.youtube.com/watch?v=keys", embedUrl: "https://www.youtube-nocookie.com/embed/keys" }] } });
   });
-  await page.route("https://www.youtube-nocookie.com/embed/keys**", route => route.fulfill({ contentType: "text/html", body: "<p>Keyboard lesson</p>" }));
+  await page.route("https://www.youtube-nocookie.com/embed/keys**", route => route.fulfill({ contentType: "text/html", body: embed }));
   await page.route("https://www.youtube.com/iframe_api", async route => {
     if (delay) await new Promise(resolve => setTimeout(resolve, delay));
     await route.fulfill({ contentType: "text/javascript", body: `
-      window.testPlayer = { state: 1, calls: [] };
+      window.testPlayer = { state: 1, calls: [], time: 30, duration: 120, seeks: [], volume: 50, muted: false };
       window.YT = { Player: class {
         constructor(iframe, options) { setTimeout(() => options.events.onReady({ target: this }), 0); }
         getPlayerState() { return window.testPlayer.state; }
         pauseVideo() { window.testPlayer.calls.push('pause'); window.testPlayer.state = 2; }
         playVideo() { window.testPlayer.calls.push('play'); window.testPlayer.state = 1; }
+        getCurrentTime() { return window.testPlayer.time; }
+        getDuration() { return window.testPlayer.duration; }
+        seekTo(time, allowSeekAhead) { window.testPlayer.time = time; window.testPlayer.seeks.push({ time, allowSeekAhead }); }
+        getVolume() { return window.testPlayer.volume; }
+        setVolume(volume) { window.testPlayer.volume = volume; }
+        isMuted() { return window.testPlayer.muted; }
+        mute() { window.testPlayer.muted = true; }
+        unMute() { window.testPlayer.muted = false; }
         destroy() { window.testPlayer.calls.push('destroy'); }
       } };
       window.onYouTubeIframeAPIReady();
     ` });
   });
   await page.getByRole("textbox", { name: /Search a word/ }).fill("octopus");
-  await clickEmoji(page, "octopus");await page.getByRole("button", { name: "Open portal", exact: true }).first().click();
+  await page.getByLabel("octopus", { exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Open portal", exact: true }).first().click();
   await page.getByRole("button", { name: "Play video: Keyboard lesson", exact: true }).click();
 }
 
@@ -597,6 +608,111 @@ test("video dialog Space toggles current playback and F toggles fullscreen witho
   await page.keyboard.press("Space");
   await expect.poll(() => page.evaluate(() => (window as any).testPlayer.state)).toBe(2);
   await page.keyboard.press("Escape");await expect(popup).toHaveCount(0);
+});
+
+test("YouTube iframe fullscreen after controls hide preserves the timeline and arrow seeking", async ({ page }) => {
+  await stubKeyboardVideo(page, 0, `
+    <style>
+      body { margin: 0; background: black; color: white; }
+      #video { width: 100vw; height: 100vh; }
+      #controls { position: fixed; bottom: 20px; left: 20px; right: 20px; }
+      input { width: 100%; }
+    </style>
+    <div id="video" tabindex="0">Video surface</div>
+    <div id="controls"><input type="range" aria-label="Timeline" min="0" max="120" value="30"></div>
+    <script>
+      const controls = document.querySelector('#controls');
+      const video = document.querySelector('#video');
+      let timer;
+      function reveal() {
+        controls.hidden = false;
+        clearTimeout(timer);
+        timer = setTimeout(() => { controls.hidden = true; }, 600);
+      }
+      document.addEventListener('mousemove', reveal);
+      document.addEventListener('keydown', event => {
+        if (event.key === 'f' && !event.repeat) {
+          event.preventDefault();
+          // Like YouTube's new embed, the controls are a sibling of the
+          // internal element used by its fullscreen keyboard shortcut.
+          if (document.fullscreenElement) document.exitFullscreen();
+          else video.requestFullscreen().catch(() => {});
+        }
+      });
+      reveal();
+    </script>
+  `);
+  const popup = page.locator('.video-dialog');
+  const screen = popup.locator('.video-dialog-screen');
+  const frame = popup.frameLocator('iframe');
+  const timeline = frame.getByRole('slider', { name: 'Timeline' });
+  const nativeVideo = frame.locator('#video');
+  await expect.poll(() => page.evaluate(() => !!(window as any).testPlayer)).toBe(true);
+  await page.mouse.move(0, 0);
+  await expect(timeline).toBeHidden();
+  // Clicking inside the cross-origin player must leave shortcuts on the app.
+  await nativeVideo.click({ position: { x: 100, y: 100 } });
+  await expect(screen).toBeFocused();
+  await page.mouse.move(0, 0);
+  await expect(timeline).toBeHidden();
+  await page.keyboard.press('f');
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement?.className)).toBe('video-dialog-screen');
+  await expect.poll(() => nativeVideo.evaluate(() => !!document.fullscreenElement)).toBe(false);
+  await expect(screen).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.seeks)).toEqual([
+    { time: 25, allowSeekAhead: true }, { time: 30, allowSeekAhead: true },
+  ]);
+  // Pointer movement must reach the iframe and reveal its interactive timeline.
+  const bounds = (await screen.boundingBox())!;
+  await page.mouse.move(bounds.x + 100, bounds.y + bounds.height - 40);
+  await expect(timeline).toBeVisible();
+  await timeline.click({ position: { x: 100, y: 8 } });
+  expect(await timeline.inputValue()).not.toBe('30');
+  // Timeline clicks must also retain app shortcuts while in fullscreen.
+  await expect(screen).toBeFocused();
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement?.className)).toBe('video-dialog-screen');
+  await page.keyboard.press('f');
+  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+  await expect(popup).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.time)).toBe(35);
+  // Clamp seeking to the video bounds, and preserve the browser's modified keys.
+  await page.evaluate(() => { (window as any).testPlayer.time = 2; });
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.time)).toBe(0);
+  await page.evaluate(() => { (window as any).testPlayer.time = 118; });
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.time)).toBe(120);
+  await page.keyboard.press('Control+ArrowLeft');
+  expect(await page.evaluate(() => (window as any).testPlayer.time)).toBe(120);
+  await page.keyboard.press('j');
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.time)).toBe(110);
+  await page.keyboard.press('l');
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.time)).toBe(120);
+  await page.keyboard.press('ArrowUp');
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.volume)).toBe(55);
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.volume)).toBe(50);
+  await page.keyboard.press('m');
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.muted)).toBe(true);
+  await popup.getByRole('button', { name: 'Fullscreen video', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement?.className)).toBe('video-dialog-screen');
+  await page.keyboard.press('f');
+  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+  // Tab still reaches the embed's own controls rather than reclaiming focus.
+  await popup.getByRole('button', { name: 'Close video', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  await expect(screen).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect.poll(() => nativeVideo.evaluate(el => document.activeElement === el)).toBe(true);
+  await page.keyboard.press('Tab');
+  await expect(timeline).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(popup.getByRole('button', { name: 'Fullscreen video', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(popup).toHaveCount(0);
 });
 
 test("Space pressed while the YouTube API loads pauses once the player is ready", async ({ page }) => {
