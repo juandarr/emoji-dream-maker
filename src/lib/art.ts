@@ -62,11 +62,19 @@ async function met(topic: TopicCandidate, signal: AbortSignal, getJSON: GetJSON)
   // Interleave queries so aliases get candidates even for a very common first term.
   const ids = [...new Set(Array.from({ length: 12 }, (_, index) => pools.flatMap(pool => pool[index] ? [pool[index]] : [])).flat())].slice(0, 24);
   const details: PromiseSettledResult<MetArt>[] = [];
-  // Four concurrent requests keep the museum's traffic bounded.
-  for (let index = 0; index < ids.length; index += 4) {
-    if (signal.aborted) break;
-    details.push(...await Promise.allSettled(ids.slice(index, index + 4).map(id => getJSON<MetArt>(`https://collectionapi.metmuseum.org/public/collection/v1/objects/${id}`, signal))));
-  }
+  // Refill each of four slots as soon as it finishes; a slow object must not
+  // hold up all subsequent objects. Keep results in search order.
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(4, ids.length) }, async () => {
+    while (next < ids.length && !signal.aborted) {
+      const index = next++;
+      try {
+        const value = await getJSON<MetArt>(`https://collectionapi.metmuseum.org/public/collection/v1/objects/${ids[index]}`,
+          AbortSignal.any([signal, AbortSignal.timeout(2000)]));
+        details[index] = { status: "fulfilled", value };
+      } catch (reason) { details[index] = { status: "rejected", reason }; }
+    }
+  }));
   if (details.length && details.every(result => result.status === "rejected")) throw (details[0] as PromiseRejectedResult).reason;
   const candidates = details.flatMap(result => {
     if (result.status !== "fulfilled") return [];
@@ -83,6 +91,8 @@ async function met(topic: TopicCandidate, signal: AbortSignal, getJSON: GetJSON)
   return { candidates, partial: pools.length !== searches.length || details.length < ids.length || details.some(result => result.status === "rejected") };
 }
 export async function discoverArt(topic: TopicCandidate, signal: AbortSignal, getJSON: GetJSON): Promise<ProviderResult> {
+  signal.throwIfAborted();
+  if (!artSearchPlan(topic).subject) return { status: "empty", items: [] };
   const sourceSignal = AbortSignal.any([signal, AbortSignal.timeout(6500)]);
   const sources = await Promise.allSettled([cleveland(topic, sourceSignal, getJSON), met(topic, sourceSignal, getJSON)]);
   signal.throwIfAborted();

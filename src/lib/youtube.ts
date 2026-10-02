@@ -7,7 +7,8 @@ import { YouTubeError } from "./youtube-error";
 import type { VideoCandidate } from "./youtube-selection";
 import type { Locale, MediaItem, TopicCandidate } from "./types";
 
-const cache = new MetadataCache<MediaItem[]>();
+// Share partial work in flight, but let a retry recover a failed search pool.
+const cache = new MetadataCache<MediaItem[]>(3_600_000, 256, items => items.length === 3);
 export function clearYouTubeCache() { cache.clear(); clearYtDlpCache(); }
 
 async function budget<T>(ms: number, parent: AbortSignal, load: (signal: AbortSignal) => Promise<T>) {
@@ -26,7 +27,7 @@ export function discoverYouTube(topic: TopicCandidate, locale: Locale, signal: A
   api: (signal: AbortSignal) => Promise<VideoCandidate[]>): Promise<MediaItem[]> {
   const mode = process.env.YOUTUBE_PROVIDER || "auto";
   if (!["auto", "yt-dlp", "api"].includes(mode)) throw new YouTubeError("setup", "The video search configuration is invalid.");
-  const key = JSON.stringify([mode, process.env.YTDLP_PATH || "yt-dlp", process.env.YOUTUBE_API_KEY || "", videoKey(topic, locale), "search-ranking-v4"]);
+  const key = JSON.stringify([mode, process.env.YTDLP_PATH || "yt-dlp", process.env.YTDLP_PYTHON_ARCHIVE || "", process.env.YOUTUBE_API_KEY || "", videoKey(topic, locale), "search-ranking-v5"]);
   return cache.get(key, signal, async sharedSignal => {
     const saved = await readVideoCache(key);
     sharedSignal.throwIfAborted();

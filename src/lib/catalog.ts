@@ -45,16 +45,26 @@ function balanced(items: EmojiRecord[]) {
   return result;
 }
 export function normalize(text: string) { return text.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase().trim(); }
+// Build once on first use, instead of normalizing thousands of labels and
+// keywords on every keystroke. Keep the initial module evaluation lightweight.
+let searchIndex: { emoji: EmojiRecord; labels: string[]; keywords: string[]; all: string[]; glyphs: string[] }[] | undefined;
+const browseOrder = new Map<number | null, EmojiRecord[]>();
 export function searchCatalog(query: string, group: number | null = null): EmojiRecord[] {
-  const candidates = group === null ? catalog : catalog.filter(e => e.group === group);
   const q = normalize(query);
-  if (!q) return balanced(candidates);
-  const terms = q.split(/\s+/);
-  return candidates.map(emoji => {
+  if (!q) {
+    let ordered = browseOrder.get(group);
+    if (!ordered) { ordered = balanced(group === null ? catalog : catalog.filter(e => e.group === group)); browseOrder.set(group, ordered); }
+    return ordered.slice();
+  }
+  searchIndex ??= catalog.map(emoji => {
     const labels = Object.values(emoji.labels).map(normalize);
     const keywords = [...emoji.keywords.en, ...emoji.keywords.es].map(normalize);
-    const all = [...labels, ...keywords];
-    const score = normalize(emoji.glyph) === q || emoji.variants.some(v => normalize(v.glyph) === q) || labels.includes(q) ? 0 : keywords.includes(q) ? 1 : all.some(v => v.startsWith(q)) ? 2 : terms.every(t => all.some(v => v.includes(t))) ? 3 : Infinity;
+    return { emoji, labels, keywords, all: [...labels, ...keywords], glyphs: [emoji.glyph, ...emoji.variants.map(v => v.glyph)].map(normalize) };
+  });
+  const candidates = group === null ? searchIndex : searchIndex.filter(entry => entry.emoji.group === group);
+  const terms = q.split(/\s+/);
+  return candidates.map(({emoji, labels, keywords, all, glyphs}) => {
+    const score = glyphs.includes(q) || labels.includes(q) ? 0 : keywords.includes(q) ? 1 : all.some(v => v.startsWith(q)) ? 2 : terms.every(t => all.some(v => v.includes(t))) ? 3 : Infinity;
     return { emoji, score };
   }).filter(e => Number.isFinite(e.score)).sort((a,b) => a.score - b.score || a.emoji.order - b.emoji.order).map(e => e.emoji);
 }

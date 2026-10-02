@@ -4,9 +4,9 @@ export const storageKey = "dream-maker-v1";
 export type Preferences = { locale: "en" | "es"; view: "constellation" | "grid" | "list"; reduced: boolean; favorites: Discovery[]; history: Discovery[] };
 export const initialPreferences: Preferences = { locale: "en", view: "constellation", reduced: false, favorites: [], history: [] };
 export function validTopic(value: unknown): value is TopicCandidate {
-  if (!value || typeof value !== "object") return false;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const t = value as TopicCandidate;
-  return [t.label,t.query,t.englishQuery].every(v=>typeof v === "string" && v.trim().length > 0 && v.length <= 150) && ["en","es"].includes(t.language) && (t.wikiTitle === undefined || typeof t.wikiTitle === "string" && t.wikiTitle.length <= 200) && (t.wikiId === undefined || Number.isInteger(t.wikiId) && t.wikiId > 0);
+  return [t.label,t.query,t.englishQuery].every(v=>typeof v === "string" && v.trim().length > 0 && v.length <= 150) && ["en","es"].includes(t.language) && (t.wikiTitle === undefined || typeof t.wikiTitle === "string" && t.wikiTitle.trim().length > 0 && t.wikiTitle.length <= 200 && !t.wikiTitle.includes("|")) && (t.wikiId === undefined || Number.isSafeInteger(t.wikiId) && t.wikiId > 0) && (t.description === undefined || typeof t.description === "string" && t.description.length <= 2000) && (t.suggested === undefined || typeof t.suggested === "boolean");
 }
 function discoveries(value: unknown, limit: number): Discovery[] {
   if (!Array.isArray(value)) return [];

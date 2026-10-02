@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, getClientRect, pointerWithin, rectIntersection, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { AnimatePresence } from "motion/react";
+import dynamic from "next/dynamic";
 import { ArrowRight, ChevronLeft, ChevronRight, Compass, Grid2X2, Heart, History, List, Moon, Orbit, Search, Shuffle, Trash2, X } from "lucide-react";
 import { catalog, defaultTopic, categories, constellationPositions, emojiById, searchCatalog } from "@/lib/catalog";
 import type { ConstellationPosition } from "@/lib/catalog";
@@ -12,8 +13,8 @@ import { discoveryKey, initialPreferences, readPreferences, remember, savePrefer
 import type { Preferences } from "@/lib/storage";
 import type { Discovery, EmojiRecord, Locale, TopicCandidate } from "@/lib/types";
 import { loadVideos } from "@/lib/video-prefetch";
-import Gallery from "./Gallery";
 import BlackHole from "./BlackHole";
+const Gallery = dynamic(() => import("./Gallery"));
 
 function EmojiButton({emoji,locale,selected,onSelect,position,view}:{emoji:EmojiRecord;locale:Locale;selected:boolean;onSelect:()=>void;position:ConstellationPosition;view:Preferences["view"]}) {
   const {attributes,listeners,setNodeRef,isDragging}=useDraggable({id:emoji.id});
@@ -65,7 +66,7 @@ export default function Explorer() {
     void loadVideos(selected.id,defaultTopic(selected,locale),locale,controller.signal).catch(()=>{});
     return ()=>controller.abort();
   },[selected,locale]);
-  const choose=(emoji:EmojiRecord)=>{setSelected(emoji);setVariant(null);};
+  const choose=(emoji:EmojiRecord)=>{void import("./Gallery");setSelected(emoji);setVariant(null);};
   const open=useCallback((emoji:EmojiRecord,glyph?:string,topic?:TopicCandidate)=>setGallery({emoji,glyph:glyph||emoji.glyph,topic,key:Date.now()}),[]);
   const close=useCallback(()=>setGallery(null),[]);
   const onRemember=useCallback((item:Discovery)=>setPrefs(p=>({...p,history:remember(p.history,item,50)})),[]);

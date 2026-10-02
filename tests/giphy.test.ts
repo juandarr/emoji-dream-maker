@@ -61,6 +61,15 @@ describe("GIF relevance", () => {
 });
 
 describe("browser GIF retrieval", () => {
+  it("offers a smaller WebP while keeping the GIF for playback fallback", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [
+      gif("small", "Octopus GIF", { images: { fixed_width: { url: "https://media.giphy.com/a.gif", webp: "https://media.giphy.com/a.webp", size: "1000", webp_size: "400" } } }),
+      gif("large", "Octopus GIF", { images: { fixed_width: { url: "https://media.giphy.com/b.gif", webp: "https://media.giphy.com/b.webp", size: "1000", webp_size: "1400" } } }),
+    ] }))));
+    const result = await searchGiphy("octopus", "en", signal());
+    expect(result.items[0]).toMatchObject({ previewUrl: "https://media.giphy.com/a.gif", previewWebpUrl: "https://media.giphy.com/a.webp" });
+    expect(result.items[1].previewWebpUrl).toBeUndefined();
+  });
   it("keeps the localized search, rating, cancellation and fresh retrieval while expanding the pool", async () => {
     const fetch = vi.fn().mockImplementation(async (_url: URL, _init?: RequestInit) => new Response(JSON.stringify({ data: [
       gif("off", "Fish GIF"), gif("one", "Octopus GIF"), gif("two", "Octopus GIF"), gif("three", "Octopus GIF"), gif("four", "Octopus GIF"),

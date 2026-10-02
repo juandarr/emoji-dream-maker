@@ -7,6 +7,8 @@ async function clickEmoji(page:Page,label:string){
   await emoji.click();
 }
 async function stubSources(page:Page){
+  await page.route("https://api.giphy.com/**",route=>route.fulfill({json:{data:[]}}));
+  await page.route("https://www.youtube.com/iframe_api",route=>route.abort());
   await page.route("**/api/related?**",route=>route.fulfill({json:{status:"ready",topics:[{label:"Marine biology",query:"Marine biology",englishQuery:"Marine biology",wikiTitle:"Marine biology",language:"en",wikiId:55,description:"The study of life in the sea"}]}}));
   await page.route("**/api/resolve?**",async route=>{
     const url=new URL(route.request().url());const id=url.searchParams.get("emojiId");const spanish=url.searchParams.get("locale")==="es";
@@ -505,4 +507,63 @@ test("Space pressed while the YouTube API loads pauses once the player is ready"
   await expect(page.locator(".video-dialog")).toBeVisible();
   await expect.poll(() => page.evaluate(() => (window as any).testPlayer?.calls)).toEqual(["pause"]);
   await page.keyboard.press("Escape");await expect(page.locator(".video-dialog")).toHaveCount(0);
+});
+
+test("art, sounds and GIFs load before Wikipedia resolves without duplicate searches", async ({ page }) => {
+  test.skip(!process.env.NEXT_PUBLIC_GIPHY_API_KEY, "Run with a browser GIF key (requests are mocked).");
+  let resolveArticle!: () => void;
+  const articleGate = new Promise<void>(resolve => { resolveArticle = resolve; });
+  const counts: Record<string, number> = {};
+  await page.route("**/api/resolve?**", async route => {
+    await articleGate;
+    const topic = {label:"Octopus",query:"Octopus",englishQuery:"Octopus",language:"en",wikiTitle:"Octopus"};
+    await route.fulfill({json:{defaultTopic:topic,alternatives:[]}});
+  });
+  await page.route("**/api/discover", async route => {
+    const {provider} = route.request().postDataJSON();
+    counts[provider] = (counts[provider] || 0) + 1;
+    if (provider === "art") return route.fulfill({json:{status:"ready",items:[{id:"art",title:"Early octopus art",sourceUrl:"https://clevelandart.org/art/1"}]}});
+    if (provider === "freesound") return route.fulfill({json:{status:"ready",items:[{id:"sound",title:"Early underwater sound",sourceUrl:"https://freesound.org/s/1/"}]}});
+    return route.fulfill({json:{status:"empty",items:[]}});
+  });
+  await page.route("https://api.giphy.com/v1/gifs/search?**", route => {
+    counts.giphy = (counts.giphy || 0) + 1;
+    return route.fulfill({json:{data:[{id:"gif",title:"Octopus GIF",url:"https://giphy.com/gifs/gif",images:{fixed_width:{url:"https://media.giphy.com/gif.gif"}}}]}});
+  });
+  await page.route("https://media.giphy.com/**", route => route.abort());
+  await page.getByRole("textbox",{name:/Search a word/}).fill("octopus");
+  await clickEmoji(page,"octopus");await page.getByRole("button",{name:"Open portal",exact:true}).first().click();
+  await expect(page.getByText("Early octopus art",{exact:true})).toBeVisible();
+  await expect(page.getByText("Early underwater sound",{exact:true})).toBeVisible();
+  await expect(page.locator(".gif-card")).toHaveCount(1);
+  expect(counts.wikipedia).toBeUndefined();
+  resolveArticle();
+  await expect(page.locator(".wikipedia-section")).toHaveAttribute("aria-busy","false");
+  expect(counts.art).toBe(1);expect(counts.freesound).toBe(1);expect(counts.giphy).toBe(1);
+});
+
+test("starting a sound pauses the other sound and failed previews can retry", async ({ page }) => {
+  await page.route("**/api/discover", async route => {
+    if (route.request().postDataJSON().provider !== "freesound") return route.fallback();
+    return route.fulfill({json:{status:"ready",items:[1,2].map(id=>({id:String(id),title:`Recording ${id}`,sourceUrl:`https://freesound.org/s/${id}/`,previewUrl:`https://media.example.test/${id}.wav`}))}});
+  });
+  await page.route("https://media.example.test/**", route => route.abort());
+  await page.getByRole("textbox",{name:/Search a word/}).fill("octopus");
+  await clickEmoji(page,"octopus");await page.getByRole("button",{name:"Open portal",exact:true}).first().click();
+  await expect(page.locator("audio")).toHaveCount(2);
+  // Dispatch the native playback event to verify coordination independently of codecs.
+  const pauses = await page.locator("audio").evaluateAll(elements => {
+    let paused = 0;
+    (elements[0] as HTMLAudioElement).pause = () => { paused++; };
+    elements[1].dispatchEvent(new Event("play"));
+    return paused;
+  });
+  expect(pauses).toBe(1);
+  await page.locator("audio").first().dispatchEvent("error");
+  const card=page.locator(".sound-card").first();
+  await expect(card.getByRole("status")).toBeVisible();
+  await card.locator("audio").evaluate(el=>{(el as HTMLAudioElement).load=()=>{(el as HTMLAudioElement).dataset.retried="true";};});
+  await card.getByRole("button",{name:"Try again",exact:true}).click();
+  await expect(card.locator("audio")).toHaveAttribute("data-retried","true");
+  await expect(card.getByRole("button",{name:"Try again",exact:true})).toHaveCount(0);
 });

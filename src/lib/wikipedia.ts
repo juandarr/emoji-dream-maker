@@ -2,6 +2,8 @@ import "server-only";
 import { load } from "cheerio";
 import { setTimeout as delay } from "node:timers/promises";
 import { defaultTopic, emojiById, normalize } from "./catalog";
+import { MetadataCache } from "./metadata-cache";
+import { boundedText } from "./bounded-text";
 import type { Locale, MediaItem, RelatedResult, Resolution, TopicCandidate } from "./types";
 
 type Page = { index?:number; pageid: number; title: string; missing?: boolean; extract?: string; lastrevid?: number; pageprops?: Record<string,string>; langlinks?: {lang:string; title:string}[]; terms?: {description?:string[]} };
@@ -10,7 +12,7 @@ type HtmlPage = {id:number; title:string; html:string; latest:{id:number}; licen
 export class WikipediaError extends Error {
   constructor(public reason:"quota"|"network"|"timeout",message:string,public retryAfter?:number){super(message);}
 }
-const cache = new Map<string,{at:number; value:unknown}>();
+const cache = new MetadataCache<unknown>();
 let cooldownUntil=0, lastStart=0, queue=Promise.resolve();
 export function clearWikiCache() { cache.clear(); cooldownUntil=0;lastStart=0; }
 function checkCooldown(){
@@ -38,20 +40,31 @@ function apiURL(locale:Locale, params:Record<string,string>) {
   for(const [k,v] of Object.entries({action:"query",format:"json",formatversion:"2",...params}))url.searchParams.set(k,v);
   return url;
 }
-async function json<T>(url:URL|string, signal:AbortSignal):Promise<T> {
-  signal.throwIfAborted();
-  const key=String(url),hit=cache.get(key);
-  if(hit && Date.now()-hit.at<3600000)return hit.value as T;
+function waitForTurn(previous: Promise<void>, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    previous.then(() => { signal.removeEventListener("abort", abort); resolve(); });
+    if (signal.aborted) { signal.removeEventListener("abort", abort); abort(); }
+  });
+}
+function json<T>(url:URL|string, signal:AbortSignal):Promise<T> {
+  return cache.get(String(url), signal, sharedSignal => fetchJSON(url, sharedSignal)) as Promise<T>;
+}
+async function fetchJSON(url: URL | string, signal: AbortSignal): Promise<unknown> {
   checkCooldown();
   // Serialize uncached requests; repeated calls during a provider cooldown use
   // the cache or return immediately instead of exhausting the same rate limit.
   const previous=queue;let release!:()=>void;
   queue=new Promise<void>(resolve=>{release=resolve;});
-  await previous;
+  try { await waitForTurn(previous, signal); }
+  catch (error) {
+    // A cancelled waiter must not let later jobs overtake the active request.
+    void previous.then(release);
+    throw error;
+  }
   try {
     signal.throwIfAborted();checkCooldown();
-    const cached=cache.get(key);
-    if(cached&&Date.now()-cached.at<3600000)return cached.value as T;
     const wait=Math.max(0,350-(Date.now()-lastStart));
     if(wait)await delay(wait,undefined,{signal});
     lastStart=Date.now();
@@ -62,12 +75,10 @@ async function json<T>(url:URL|string, signal:AbortSignal):Promise<T> {
       throw new WikipediaError("quota","Wikipedia has requested a pause.",seconds);
     }
     if(!response.ok)throw new WikipediaError("network",`Wikipedia HTTP ${response.status}`);
-    const text=await response.text();
-    if(text.length>6_000_000)throw new Error("Wikipedia response too large");
+    const text=await boundedText(response,6_000_000);
     const value=JSON.parse(text);
     if(value.error)throw new Error("Wikipedia API error");
-    if(cache.size>=256)cache.delete(cache.keys().next().value!);
-    cache.set(key,{at:Date.now(),value});return value as T;
+    return value;
   }finally{release();}
 }
 

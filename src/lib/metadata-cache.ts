@@ -4,7 +4,7 @@ type Job<T> = { controller: AbortController; promise: Promise<T>; users: number;
 export class MetadataCache<T> {
   private values = new Map<string, { at: number; value: T }>();
   private jobs = new Map<string, Job<T>>();
-  constructor(private ttl = 3_600_000, private limit = 256) {}
+  constructor(private ttl = 3_600_000, private limit = 256, private shouldCache: (value: T) => boolean = () => true) {}
 
   clear() {
     this.values.clear();
@@ -22,8 +22,11 @@ export class MetadataCache<T> {
       const controller = new AbortController();
       job = { controller, users: 0, done: false, promise: undefined! };
       const current = job;
-      job.promise = Promise.resolve().then(() => load(controller.signal)).then(value => {
-        if (!controller.signal.aborted) {
+      job.promise = Promise.resolve().then(() => {
+        controller.signal.throwIfAborted();
+        return load(controller.signal);
+      }).then(value => {
+        if (!controller.signal.aborted && this.shouldCache(value)) {
           if (this.values.size >= this.limit) this.values.delete(this.values.keys().next().value!);
           this.values.set(key, { at: Date.now(), value });
         }

@@ -4,6 +4,11 @@ import { initialPreferences, readPreferences, remember, savePreferences, validTo
 const emoji=searchCatalog("octopus")[0];
 const discovery={emojiId:emoji.id,topic:defaultTopic(emoji,"en"),at:1};
 describe("local discoveries",()=>{
+  it("rejects saved topics with objects where React expects description text",()=>{
+    expect(validTopic({...discovery.topic,description:{broken:true}})).toBe(false);
+    expect(validTopic({...discovery.topic,suggested:"false"})).toBe(false);
+    expect(validTopic({...discovery.topic,wikiTitle:"Smile|Ocean"})).toBe(false);
+  });
   it("survives corrupt or inaccessible storage",()=>{expect(readPreferences({getItem:()=>"{broken"})).toEqual(initialPreferences);expect(readPreferences({getItem:()=>{throw new Error();}})).toEqual(initialPreferences);expect(savePreferences({setItem:()=>{throw new Error();}},initialPreferences)).toBe(false);});
   it("validates saved records and bounds history",()=>{const preferences=readPreferences({getItem:()=>JSON.stringify({locale:"es",history:[...Array.from({length:60},()=>discovery),{emojiId:"not-an-emoji",topic:discovery.topic,at:1}],favorites:[{...discovery,topic:{label:"invalid"}}]})});expect(preferences.locale).toBe("es");expect(preferences.history).toHaveLength(50);expect(preferences.favorites).toHaveLength(0);});
   it("deduplicates revisits without losing separate interpretations",()=>{const heart=searchCatalog("❤️")[0];const love={emojiId:heart.id,topic:defaultTopic(heart,"en"),at:1};const anatomy={...love,topic:{...love.topic,label:"Human heart",wikiTitle:"Human heart"}};expect(remember([love,anatomy],{...love,at:2},50)).toEqual([{...love,at:2},anatomy]);});

@@ -2,6 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import { MetadataCache } from "@/lib/metadata-cache";
 
 describe("shared metadata cache", () => {
+  it("shares incomplete results in flight but does not keep them for retries", async () => {
+    const cache = new MetadataCache<number[]>(1000, 2, value => value.length === 3);
+    const signal = new AbortController().signal;
+    const load = vi.fn().mockResolvedValueOnce([1]).mockResolvedValueOnce([1, 2, 3]);
+    expect(await Promise.all([cache.get("a", signal, load), cache.get("a", signal, load)])).toEqual([[1], [1]]);
+    expect(load).toHaveBeenCalledOnce();
+    expect(await cache.get("a", signal, load)).toEqual([1, 2, 3]);
+    expect(await cache.get("a", signal, load)).toEqual([1, 2, 3]);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
   it("keeps shared work alive until its last subscriber cancels", async () => {
     const cache = new MetadataCache(); const a = new AbortController(), b = new AbortController();
     let shared: AbortSignal;
