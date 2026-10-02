@@ -34,17 +34,27 @@ function VideoCard({item,t,onPlay}:{item:MediaItem;t:typeof messages.en;onPlay:(
     <h4>{item.title}</h4><p>{item.creator}</p><SourceLink item={item} label={t.source}/>
   </article>;
 }
+function SoundCard({item,t}:{item:MediaItem;t:typeof messages.en}) {
+  return <article className="media-card sound-card">
+    <span className="sound-icon"><Music2 size={22}/></span><h4>{item.title}</h4><p>{item.creator}</p>
+    {item.soundConnection&&<p className="sound-connection"><span>{item.soundConnection.kind==="evocative"?t.soundEvokes:t.soundScene}:</span> {item.soundConnection.label}</p>}
+    <audio controls preload="none" src={safeURL(item.previewUrl)} aria-label={item.title}/>
+    <div className="attribution"><SourceLink item={item} label={t.source}/><a href={safeURL(item.licenseUrl)} target="_blank" rel="noopener noreferrer">{item.license}</a></div>
+  </article>;
+}
 function MediaSection({provider,result,locale,retry,reduced,onPlay}:{provider:Exclude<Provider,"art"|"wikipedia">;result:ProviderResult;locale:Locale;retry:()=>void;reduced:boolean;onPlay:(item:MediaItem)=>void}) {
   const t=messages[locale];
   const titles={youtube:t.watchLearn,giphy:t.gifs,freesound:t.listen};
   const icons={youtube:Play,giphy:Sparkles,freesound:Music2};
   const Icon=icons[provider];
-  const message=result.status==="empty"?(provider==="youtube"?t.noLearningVideos:t.noMedia):result.reason==="setup"?t.videoSetup:result.reason==="credentials"?t.credentials:result.reason==="quota"?t.quota:result.reason==="timeout"?t.timeout:t.network;
+  const message=result.status==="empty"?(provider==="youtube"?t.noLearningVideos:provider==="freesound"?t.noSounds:t.noMedia):result.reason==="setup"?t.videoSetup:result.reason==="credentials"?t.credentials:result.reason==="quota"?t.quota:result.reason==="timeout"?t.timeout:t.network;
   return <section className={`media-section ${provider}-section`} aria-label={titles[provider]} aria-busy={result.status==="loading"}>
     <div className="section-heading"><h3><Icon size={17}/>{titles[provider]}</h3>{provider==="giphy"&&<a className="giphy-credit" href="https://giphy.com" target="_blank" rel="noopener noreferrer">Powered By <strong>GIPHY</strong><span className="giphy-bars" aria-hidden="true"/></a>}</div>
     {provider==="youtube"&&result.status==="ready"&&<p className="video-section-hint">{t.learningVideosHint}</p>}
+    {provider==="freesound"&&result.status==="ready"&&<p className="sound-section-hint">{t.soundsHint}</p>}
+    {provider==="freesound"&&result.status==="ready"&&result.partial&&<p className="sound-section-hint" role="status">{t.soundsPartial}</p>}
     {result.status==="loading"?<div className="loading-state"><LoaderCircle className={reduced?"":"spin"} size={18}/>{t.loading}<div className="skeleton-line"/><div className="skeleton-line short"/></div>:result.status!=="ready"?<div className="source-empty"><p>{message}</p>{result.reason!=="credentials"&&<button onClick={retry}>{t.retry}<ChevronRight size={14}/></button>}</div>:<div className={`media-items ${provider}`}>
-      {result.items.map(item=>provider==="youtube"?<VideoCard key={item.id} item={item} t={t} onPlay={onPlay}/>:provider==="giphy"?<a key={item.id} href={safeURL(item.sourceUrl)} target="_blank" rel="noopener noreferrer" className="gif-card"><Preview item={item}/><span>{item.title}<ArrowUpRight size={13}/></span></a>:<article className="media-card sound-card" key={item.id}><span className="sound-icon"><Music2 size={22}/></span><h4>{item.title}</h4><p>{item.creator}</p><audio controls preload="none" src={safeURL(item.previewUrl)} aria-label={item.title}/><div className="attribution"><SourceLink item={item} label={t.source}/><a href={safeURL(item.licenseUrl)} target="_blank" rel="noopener noreferrer">{item.license}</a></div></article>)}
+      {result.items.map(item=>provider==="youtube"?<VideoCard key={item.id} item={item} t={t} onPlay={onPlay}/>:provider==="giphy"?<a key={item.id} href={safeURL(item.sourceUrl)} target="_blank" rel="noopener noreferrer" className="gif-card"><Preview item={item}/><span>{item.title}<ArrowUpRight size={13}/></span></a>:<SoundCard key={item.id} item={item} t={t}/>)}
     </div>}
   </section>;
 }

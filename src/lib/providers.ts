@@ -5,6 +5,7 @@ export { resolveTopic, extractLead } from "./wikipedia";
 import { artExclusionsByQuery } from "./aliases";
 import { normalize } from "./catalog";
 import { discoverArt } from "./art";
+import { discoverSounds } from "./freesound";
 import { learningVideoQuery, selectLearningCandidates,youtubeApiCandidate, selectLearningVideos, videoDurationSeconds } from "./youtube-selection";
 import type { YouTubeVideo } from "./youtube-selection";
 import { clearYouTubeCache, discoverYouTube } from "./youtube";
@@ -45,13 +46,6 @@ async function youtubeApi(topic: TopicCandidate, locale: Locale, signal: AbortSi
   const videos=ids.flatMap(id=>{const video=byId.get(id);return video?[{...video,snippet:{...video.snippet,title:load(video.snippet.title).text(),description:load(video.snippet.description||"").text()}}]:[];});
   return selectLearningCandidates(videos.map(youtubeApiCandidate),topic,locale);
 }
-async function freesound(topic: TopicCandidate, signal: AbortSignal): Promise<MediaItem[]> {
-  const url=new URL("https://freesound.org/apiv2/search/text/");
-  for (const [k,v] of Object.entries({query:topic.englishQuery,filter:'license:("Creative Commons 0" OR "Attribution")',page_size:"10",fields:"id,name,url,username,license,previews"})) url.searchParams.set(k,v);
-  type Sound={id:number;name:string;url:string;username:string;license:string;previews:Record<string,string>};
-  const data=await getJSON<{results:Sound[]}>(url,signal,{Authorization:`Token ${process.env.FREESOUND_API_KEY}`});
-  return (data.results||[]).filter(s=>/\/publicdomain\/zero\/|\/licenses\/by\//.test(s.license)&&s.previews["preview-hq-mp3"]).slice(0,3).map(s=>({id:String(s.id),title:s.name,sourceUrl:s.url,creator:s.username,license:s.license.includes("/zero/")?"CC0":"CC BY",licenseUrl:s.license,previewUrl:s.previews["preview-hq-mp3"]}));
-}
 export async function discover(input: DiscoverInput, signal: AbortSignal): Promise<ProviderResult> {
   const {provider,topic,locale}=input;
   const start=Date.now();
@@ -62,11 +56,16 @@ export async function discover(input: DiscoverInput, signal: AbortSignal): Promi
       console.info(JSON.stringify({provider,durationMs:Date.now()-start,status:result.status,partial:result.partial}));
       return result;
     }
-    const items=await ({wikipedia:()=>wikipedia(topic,signal),youtube:()=>discoverYouTube(topic,locale,signal,apiSignal=>youtubeApi(topic,locale,apiSignal)),freesound:()=>freesound(topic,signal)})[provider]();
+    if (provider === "freesound") {
+      const result = await discoverSounds(topic, locale, signal, getJSON);
+      console.info(JSON.stringify({provider,durationMs:Date.now()-start,status:result.status,partial:result.partial}));
+      return result;
+    }
+    const items=await ({wikipedia:()=>wikipedia(topic,signal),youtube:()=>discoverYouTube(topic,locale,signal,apiSignal=>youtubeApi(topic,locale,apiSignal))})[provider]();
     console.info(JSON.stringify({provider,durationMs:Date.now()-start,status:items.length?"ready":"empty"}));
     return {status:items.length?"ready":"empty",items};
   } catch(error) {
-    const timeout = signal.aborted;
+    const timeout = signal.aborted || (error instanceof Error && error.name === "TimeoutError");
     const reason = timeout?"timeout":(error instanceof ProviderError||error instanceof WikipediaError||error instanceof YouTubeError)?error.reason:"network";
     console.info(JSON.stringify({provider,durationMs:Date.now()-start,status:"error",reason}));
     return {status:["quota","setup","credentials"].includes(reason)?"unavailable":"error",items:[],reason,retryAfter:error instanceof WikipediaError?error.retryAfter:undefined,message:timeout?"This source took too long. Try it again.":error instanceof ProviderError||error instanceof YouTubeError?error.message:"This source could not be reached. Try again shortly."};
