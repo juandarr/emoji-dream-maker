@@ -36,7 +36,8 @@ export default function VideoPlayer({ item, locale, onClose }: { item: MediaItem
     if (!embedURL) return;
     let cancelled = false;
     let instance: YouTubePlayer | undefined;
-    pendingPlayback.current = null;
+    // A shortcut can arrive between opening the dialog and initializing the
+    // iframe. Preserve that intent until onReady consumes it.
     void loadYouTubePlayer().then(api => {
       if (cancelled || !iframe.current) return;
       instance = new api.Player(iframe.current, { events: {

@@ -59,6 +59,31 @@ describe("independent live sources",()=>{
     const result=await discover({emojiId:emoji.id,topic,locale:"en",provider:"youtube"},new AbortController().signal);
     expect(result.reason).toBe("quota");expect(result.items).toEqual([]);
   });
-  it("excludes noncommercial and unattributed audio",async()=>{vi.stubEnv("FREESOUND_API_KEY","test-key");vi.stubGlobal("fetch",vi.fn().mockResolvedValue(response({results:[{id:1,name:"CC0",url:"https://freesound.org/s/1/",username:"artist",license:"https://creativecommons.org/publicdomain/zero/1.0/",previews:{"preview-hq-mp3":"https://example.com/a.mp3"}},{id:2,name:"NC",license:"https://creativecommons.org/licenses/by-nc/4.0/",previews:{"preview-hq-mp3":"https://example.com/b.mp3"}}]})));const result=await discover({emojiId:emoji.id,topic,locale:"en",provider:"freesound"},new AbortController().signal);expect(result.items.map(s=>s.title)).toEqual(["CC0"]);expect(result.items[0].creator).toBe("artist");});
-  it("preserves GIPHY ordering, ratings and fresh retrieval",async()=>{vi.stubEnv("NEXT_PUBLIC_GIPHY_API_KEY","test-browser-key");const data={data:["second","first"].map(id=>({id,title:id,url:`https://giphy.com/gifs/${id}`,images:{fixed_width:{url:`https://media.giphy.com/${id}.gif`}}}))};const fetch=vi.fn().mockResolvedValue(response(data));vi.stubGlobal("fetch",fetch);const first=await searchGiphy("octopus","es",new AbortController().signal);await searchGiphy("octopus","es",new AbortController().signal);expect(first.items.map(g=>g.id)).toEqual(["second","first"]);expect(fetch).toHaveBeenCalledTimes(2);expect(new URL(String(fetch.mock.calls[0][0])).searchParams.get("rating")).toBe("g");});
+  it("excludes noncommercial and unattributed audio",async()=>{vi.stubEnv("FREESOUND_API_KEY","test-key");vi.stubGlobal("fetch",vi.fn().mockResolvedValue(response({results:[{id:1,name:"Underwater ambience",duration:10,url:"https://freesound.org/s/1/",username:"artist",license:"https://creativecommons.org/publicdomain/zero/1.0/",previews:{"preview-hq-mp3":"https://example.com/a.mp3"}},{id:2,name:"Underwater ambience",duration:10,username:"artist",url:"https://freesound.org/s/2/",license:"https://creativecommons.org/licenses/by-nc/4.0/",previews:{"preview-hq-mp3":"https://example.com/b.mp3"}}]})));const result=await discover({emojiId:emoji.id,topic,locale:"en",provider:"freesound"},new AbortController().signal);expect(result.items.map(s=>s.title)).toEqual(["Underwater ambience"]);expect(result.items[0].creator).toBe("artist");});
+  it("preserves GIPHY ordering for equally relevant matches, ratings and fresh retrieval",async()=>{vi.stubEnv("NEXT_PUBLIC_GIPHY_API_KEY","test-browser-key");const data={data:["second","first"].map(id=>({id,title:"Octopus GIF",url:`https://giphy.com/gifs/${id}`,images:{fixed_width:{url:`https://media.giphy.com/${id}.gif`}}}))};const fetch=vi.fn().mockResolvedValue(response(data));vi.stubGlobal("fetch",fetch);const first=await searchGiphy("octopus","es",new AbortController().signal);await searchGiphy("octopus","es",new AbortController().signal);expect(first.items.map(g=>g.id)).toEqual(["second","first"]);expect(fetch).toHaveBeenCalledTimes(2);expect(new URL(String(fetch.mock.calls[0][0])).searchParams.get("rating")).toBe("g");});
+});
+
+it("keeps verified YouTube results from a successful search and retries the failed pool", async () => {
+  vi.stubEnv("YOUTUBE_API_KEY","test-key");
+  let failed = true;
+  const fetch=vi.fn(async (input:URL|string) => {
+    const url=new URL(String(input));
+    if(url.pathname.endsWith("search")) {
+      if(url.searchParams.get("q")?.endsWith("documentary")) {
+        if(failed)return response({},503);
+        return response({items:[{id:{videoId:"lmnopqrstuv"}},{id:{videoId:"12345678901"}}]});
+      }
+      return response({items:[{id:{videoId:"abcdefghijk"}}]});
+    }
+    return response({items:url.searchParams.get("id")!.split(",").map(id=>({
+      id,snippet:{title:"Octopus explained",channelId:"UCsooa4yRKGN_zEE8iknghZA",channelTitle:"TED-Ed"},
+      contentDetails:{duration:"PT8M"},status:{embeddable:true,privacyStatus:"public"},
+    }))});
+  });
+  vi.stubGlobal("fetch",fetch);
+  const input={emojiId:emoji.id,topic,locale:"en" as const,provider:"youtube" as const};
+  expect((await discover(input,new AbortController().signal)).items).toHaveLength(1);
+  failed=false;
+  expect((await discover(input,new AbortController().signal)).items).toHaveLength(3);
+  expect(fetch).toHaveBeenCalledTimes(5);
 });

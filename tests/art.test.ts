@@ -86,3 +86,31 @@ describe("trusted image providers", () => {
     expect(result.status).toBe("empty");expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
+
+it("refills museum detail slots while a slow earlier object is still pending", async () => {
+  const { discoverArt } = await import("@/lib/art");
+  let release!: () => void;
+  let active = 0, peak = 0;
+  const requested: number[] = [];
+  const getJSON = vi.fn(async (url: URL | string) => {
+    const address = String(url);
+    if (address.includes("cleveland")) return { data: [] };
+    if (address.includes("/search?")) return { objectIDs: [1, 2, 3, 4, 5, 6] };
+    const id = Number(address.split("/").at(-1));
+    requested.push(id); active++; peak = Math.max(active, peak);
+    if (id === 1) await new Promise<void>(resolve => { release = resolve; });
+    active--;
+    return { objectID: id, title: `Octopus ${id}`, isPublicDomain: true, primaryImage: `https://images.metmuseum.org/${id}.jpg` };
+  });
+  const pending = discoverArt(topic("Octopus"), new AbortController().signal, getJSON as Parameters<typeof discoverArt>[2]);
+  await vi.waitFor(() => expect(requested).toContain(6));
+  expect(active).toBe(1); expect(peak).toBeLessThanOrEqual(4);
+  release();
+  expect((await pending).items).toHaveLength(5);
+});
+
+it("does not search entire museum collections when a subject has no searchable terms", async () => {
+  const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+  const result = await discover({ emojiId: "1F419", provider: "art", locale: "en", topic: topic("✨") }, new AbortController().signal);
+  expect(result.status).toBe("empty"); expect(fetch).not.toHaveBeenCalled();
+});

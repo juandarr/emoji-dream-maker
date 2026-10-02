@@ -52,3 +52,37 @@ it("removes nested formula markup while retaining the visible symbol and prose",
   vi.stubGlobal("fetch",vi.fn().mockResolvedValue(response({query:{pages:[{pageid:1,title:"Infinity",extract:'Infinity (symbol: ∞ {\\displaystyle \\frac{a}{b}}) is a mathematical concept. It is unbounded.'}]}})));
   const items=await wikipedia({...topic,query:"Infinity"},signal());expect(items[0].excerpt).toBe("Infinity (symbol: ∞ ) is a mathematical concept. It is unbounded.");
 });
+
+it("shares a pending article and preserves it when one reader leaves", async () => {
+  let complete!: (response: Response) => void;
+  let requestSignal!: AbortSignal;
+  const fetch = vi.fn((_url, options) => {
+    requestSignal = options.signal;
+    return new Promise<Response>(resolve => { complete = resolve; });
+  });
+  vi.stubGlobal("fetch", fetch);
+  const a = new AbortController(), b = new AbortController();
+  const first = wikipedia(topic, a.signal), second = wikipedia(topic, b.signal);
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+  a.abort(); await expect(first).rejects.toThrow();
+  expect(requestSignal.aborted).toBe(false);
+  complete(response({query:{pages:[{pageid:1,title:"Smile",extract:"A smile is an expression."}]}}));
+  expect((await second)[0].title).toBe("Smile");
+  expect(fetch).toHaveBeenCalledOnce();
+});
+
+it("cancels queued article requests before the active request completes", async () => {
+  let complete!: (response: Response) => void;
+  const fetch = vi.fn(() => new Promise<Response>(resolve => { complete = resolve; }));
+  vi.stubGlobal("fetch", fetch);
+  const first = wikipedia(topic, signal());
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+  const controller = new AbortController();
+  const queued = wikipedia({...topic,query:"Ocean"}, controller.signal);
+  // Allow the cache loader to enter the serialized queue before cancellation.
+  await Promise.resolve(); await Promise.resolve();
+  controller.abort(); await expect(queued).rejects.toThrow();
+  expect(fetch).toHaveBeenCalledOnce();
+  complete(response({query:{pages:[{pageid:1,title:"Smile",extract:"A smile is an expression."}]}}));
+  await first;
+});

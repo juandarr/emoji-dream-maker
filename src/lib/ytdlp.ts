@@ -60,10 +60,10 @@ export async function ytDlpVideos(topic: TopicCandidate, locale: Locale, signal:
   try {
     // Search listings already include titles, channel IDs, duration and views.
     // Avoid six serial watch-page extractions before showing the cards.
-    const results = await Promise.allSettled([false, true].map(async documentary => {
-      const candidates = await search(searchQuery(topic, locale, documentary), locale, batchSignal);
-      pool.push(...candidates);
-    }));
+    const results = await Promise.allSettled([false, true].map(documentary =>
+      search(searchQuery(topic, locale, documentary), locale, batchSignal)));
+    // Keep relevance ties stable regardless of which network request finishes first.
+    for (const result of results) if (result.status === "fulfilled") pool.push(...result.value);
     signal.throwIfAborted();
     let selected = selectSearchLearningCandidates(pool, topic, locale);
     if (selected.length < 3 && locale !== "en") {
@@ -75,7 +75,7 @@ export async function ytDlpVideos(topic: TopicCandidate, locale: Locale, signal:
         selected = [...selected, ...extra.filter(video => !selected.some(item => item.id === video.id))].slice(0, 3);
       } catch { signal.throwIfAborted(); }
     }
-    if (!pool.length && results.every(result => result.status === "rejected")) throw (results[0] as PromiseRejectedResult).reason;
+    if (!selected.length && !pool.length && results.every(result => result.status === "rejected")) throw (results[0] as PromiseRejectedResult).reason;
     return selected;
   } finally { controller.abort(); }
 }

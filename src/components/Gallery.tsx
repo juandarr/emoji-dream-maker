@@ -21,24 +21,31 @@ const safeURL=(url?:string)=>{try { const parsed=new URL(url||""); return parsed
 
 function Preview({item,className=""}:{item:MediaItem;className?:string}) {
   const [failed,setFailed]=useState(false);
+  const [fallback,setFallback]=useState(false);
+  useEffect(()=>{setFailed(false);setFallback(false);},[item.previewUrl,item.previewWebpUrl]);
   if(failed||!safeURL(item.previewUrl)) return <div className={`preview-fallback ${className}`}><Sparkles size={24}/></div>;
-  return <img src={safeURL(item.previewUrl)} alt={item.title} loading="lazy" className={className} onError={()=>setFailed(true)}/>;
+  const webp=!fallback&&safeURL(item.previewWebpUrl);
+  return <img src={webp||safeURL(item.previewUrl)} alt={item.title} loading="lazy" decoding="async" className={className} onError={()=>{if(webp)setFallback(true);else setFailed(true);}}/>;
 }
 function SourceLink({item,label}:{item:MediaItem;label:string}) {
   return <a href={safeURL(item.sourceUrl)} target="_blank" rel="noopener noreferrer">{label}<ArrowUpRight size={13}/></a>;
 }
 function VideoCard({item,t,onPlay}:{item:MediaItem;t:typeof messages.en;onPlay:(item:MediaItem)=>void}) {
-  const duration=item.durationSeconds?`${Math.floor(item.durationSeconds/60)}:${String(item.durationSeconds%60).padStart(2,"0")}`:null;
+  const seconds=Math.floor(item.durationSeconds||0);
+  const duration=seconds?`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,"0")}`:null;
   return <article className="media-card video-card">
     <button className="video-preview" onClick={()=>onPlay(item)} disabled={!safeURL(item.embedUrl)} aria-label={`${t.play}: ${item.title}`}><Preview item={item}/><span className="play-circle"><Play size={20} fill="currentColor"/></span>{duration&&<span className="video-duration">{duration}</span>}</button>
     <h4>{item.title}</h4><p>{item.creator}</p><SourceLink item={item} label={t.source}/>
   </article>;
 }
 function SoundCard({item,t}:{item:MediaItem;t:typeof messages.en}) {
+  const [failed,setFailed]=useState(false);
+  const audio=useRef<HTMLAudioElement>(null);
   return <article className="media-card sound-card">
     <span className="sound-icon"><Music2 size={22}/></span><h4>{item.title}</h4><p>{item.creator}</p>
     {item.soundConnection&&<p className="sound-connection"><span>{item.soundConnection.kind==="evocative"?t.soundEvokes:t.soundScene}:</span> {item.soundConnection.label}</p>}
-    <audio controls preload="none" src={safeURL(item.previewUrl)} aria-label={item.title}/>
+    <audio ref={audio} controls preload="none" src={safeURL(item.previewUrl)} aria-label={item.title} onError={()=>setFailed(true)} onPlay={()=>setFailed(false)}/>
+    {failed&&<div className="source-empty" role="status"><p>{t.network}</p><button onClick={()=>{setFailed(false);audio.current?.load();}}>{t.retry}</button></div>}
     <div className="attribution"><SourceLink item={item} label={t.source}/><a href={safeURL(item.licenseUrl)} target="_blank" rel="noopener noreferrer">{item.license}</a></div>
   </article>;
 }
@@ -52,7 +59,7 @@ function MediaSection({provider,result,locale,retry,reduced,onPlay}:{provider:Ex
     <div className="section-heading"><h3><Icon size={17}/>{titles[provider]}</h3>{provider==="giphy"&&<a className="giphy-credit" href="https://giphy.com" target="_blank" rel="noopener noreferrer">Powered By <strong>GIPHY</strong><span className="giphy-bars" aria-hidden="true"/></a>}</div>
     {provider==="youtube"&&result.status==="ready"&&<p className="video-section-hint">{t.learningVideosHint}</p>}
     {provider==="freesound"&&result.status==="ready"&&<p className="sound-section-hint">{t.soundsHint}</p>}
-    {provider==="freesound"&&result.status==="ready"&&result.partial&&<p className="sound-section-hint" role="status">{t.soundsPartial}</p>}
+    {provider==="freesound"&&result.status==="ready"&&result.partial&&<div className="sound-section-hint"><p role="status">{t.soundsPartial}</p><button onClick={retry}>{t.retry}</button></div>}
     {result.status==="loading"?<div className="loading-state"><LoaderCircle className={reduced?"":"spin"} size={18}/>{t.loading}<div className="skeleton-line"/><div className="skeleton-line short"/></div>:result.status!=="ready"?<div className="source-empty"><p>{message}</p>{result.reason!=="credentials"&&<button onClick={retry}>{t.retry}<ChevronRight size={14}/></button>}</div>:<div className={`media-items ${provider}`}>
       {result.items.map(item=>provider==="youtube"?<VideoCard key={item.id} item={item} t={t} onPlay={onPlay}/>:provider==="giphy"?<a key={item.id} href={safeURL(item.sourceUrl)} target="_blank" rel="noopener noreferrer" className="gif-card"><Preview item={item}/><span>{item.title}<ArrowUpRight size={13}/></span></a>:<SoundCard key={item.id} item={item} t={t}/>)}
     </div>}
@@ -100,11 +107,17 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
     if(initialTopic) return;
     const controller=new AbortController();
     const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(5000)]);
+    queueMicrotask(()=>{
+    if(controller.signal.aborted)return;
     fetch(`/api/resolve?emojiId=${encodeURIComponent(emoji.id)}&locale=${locale}`,{signal}).then(async r=>{if(!r.ok)throw new Error();return await r.json() as Resolution;}).then(data=>{
       if(controller.signal.aborted)return;
-      if(validTopic(data.defaultTopic))setTopic(data.defaultTopic);
+      if(validTopic(data.defaultTopic)){
+        if(videoKey(data.defaultTopic,locale)!==videoKey(defaultTopic(emoji,locale),locale)){setActiveVideo(null);pauseMedia();}
+        setTopic(data.defaultTopic);
+      }
       setAlternatives(data.alternatives.filter(validTopic).slice(0,3));
     }).catch(()=>{/* Local subject remains available. */}).finally(()=>{if(!controller.signal.aborted)setResolving(false);});
+    });
     return ()=>controller.abort();
   },[emoji.id,locale,initialTopic]);
 
@@ -130,17 +143,26 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
   const latestLoad=useRef(loadSource);
   useEffect(()=>{latestLoad.current=loadSource;},[loadSource]);
   useEffect(()=>{
-    void latestLoad.current("youtube");
+    // Media uses the local concept immediately. Wikipedia enrichment only
+    // restarts these requests if the actual search terms change.
+    // Defer one microtask so Strict Mode's setup/cleanup probe cannot send a
+    // duplicate request (especially to GIPHY, which must not be cached).
+    let active=true;
+    queueMicrotask(()=>{if(active)providers.filter(p=>p!=="wikipedia").forEach(p=>void latestLoad.current(p));});
     const requests=controllers.current;
-    return ()=>{requests.get("youtube")?.abort();requests.delete("youtube");};
+    return ()=>{active=false;providers.filter(p=>p!=="wikipedia").forEach(p=>{requests.get(p)?.abort();requests.delete(p);});};
   },[videoIdentity,emoji.id]);
+  const articleIdentity=JSON.stringify([topic.language,topic.wikiTitle||topic.query,topic.englishQuery]);
   useEffect(()=>{
     if(resolving)return;
-    onRemember({emojiId:emoji.id,topic,at:Date.now()});
-    providers.filter(p=>p!=="youtube").forEach(p=>void loadSource(p));
+    let active=true;
+    queueMicrotask(()=>{if(active)void latestLoad.current("wikipedia");});
     const requests=controllers.current;
-    return ()=>{providers.filter(p=>p!=="youtube").forEach(p=>{requests.get(p)?.abort();requests.delete(p);});};
-  },[resolving,loadSource,emoji.id,topic,onRemember]);
+    return ()=>{active=false;requests.get("wikipedia")?.abort();requests.delete("wikipedia");};
+  },[resolving,articleIdentity,emoji.id]);
+  useEffect(()=>{
+    if(!resolving)onRemember({emojiId:emoji.id,topic,at:Date.now()});
+  },[resolving,emoji.id,topic,onRemember]);
   async function findSubjects(event:React.FormEvent){
     event.preventDefault(); if(!query.trim())return;
     subjectController.current?.abort();const controller=new AbortController();subjectController.current=controller;
@@ -153,10 +175,11 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
     }catch{if(!controller.signal.aborted)setSubjectResults([]);}finally{if(!controller.signal.aborted)setSearching(false);}
   }
   function navigate(next:TopicCandidate){
-    const sameVideos=videoKey(next,locale)===videoIdentity;
-    setActiveVideo(null);pauseMedia();controllers.current.forEach((c,p)=>{if(!sameVideos||p!=="youtube")c.abort();});
+    const sameMedia=videoKey(next,locale)===videoIdentity;
+    const sameArticle=JSON.stringify([next.language,next.wikiTitle||next.query,next.englishQuery])===articleIdentity;
+    setActiveVideo(null);pauseMedia();controllers.current.forEach((c,p)=>{if(p==="wikipedia"?!sameArticle:!sameMedia)c.abort();});
     subjectController.current?.abort();setSearching(false);
-    setResults(previous=>({...emptyResults(),...(sameVideos?{youtube:previous.youtube}:{})}));
+    setResults(previous=>Object.fromEntries(providers.map(p=>[p,(p==="wikipedia"?sameArticle:sameMedia)?previous[p]:loading])) as Record<Provider,ProviderResult>);
     setTopic(next);setChanging(false);setSubjectResults(null);
     requestAnimationFrame(()=>{dialog.current?.scrollTo({top:0,behavior:"instant"});dialog.current?.querySelector<HTMLElement>("#gallery-title")?.focus();});
   }
@@ -164,13 +187,15 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
   function goBack(){const previous=trail.at(-1);if(previous){setTrail(trail.slice(0,-1));navigate(previous);}}
 
   return <motion.div className={`gallery-backdrop ${reduced?"reduced":""}`} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={e=>{if(e.target===e.currentTarget)closeGallery();}}>
-    <motion.div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="gallery-title" tabIndex={-1} className="gallery" initial={{opacity:0,y:reduced?0:32,scale:reduced?1:.97}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:reduced?0:20}} transition={{duration:reduced?.1:.28}}>
+    <motion.div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="gallery-title" tabIndex={-1} className="gallery" onPlayCapture={event=>{
+      if(event.target instanceof HTMLMediaElement)dialog.current?.querySelectorAll<HTMLMediaElement>("audio, video").forEach(media=>{if(media!==event.target)media.pause();});
+    }} initial={{opacity:0,y:reduced?0:32,scale:reduced?1:.97}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:reduced?0:20}} transition={{duration:reduced?.1:.28}}>
       <div className="gallery-top"><span><Sparkles size={14}/>{t.discovery}</span><button className="icon-button" onClick={closeGallery} aria-label={t.close}><X size={22}/></button></div>
       <header className="gallery-header"><span className="gallery-emoji">{glyph}</span><div><h2 id="gallery-title" tabIndex={-1}>{resolving?emoji.labels[locale]:topic.label}</h2>{(resolving||topic.suggested)&&<p className="gallery-subtitle">{resolving?t.loadingSubject:t.suggested}</p>}</div><button className={`favorite-button ${isFavorite(discovery)?"active":""}`} disabled={resolving} aria-label={isFavorite(discovery)?t.unfavorite:t.favorite} onClick={()=>onFavorite(discovery)}><Heart size={20} fill={isFavorite(discovery)?"currentColor":"none"}/></button></header>
       {trail.length>0&&<nav className="exploration-trail" aria-label={locale==="es"?"Camino de exploración":"Exploration path"}><button onClick={goBack}>← {locale==="es"?"Volver a":"Back to"} {trail.at(-1)?.label}</button></nav>}
       <div className="topic-bar"><div>{alternatives.some(c=>c.label!==topic.label)&&<span>{t.alternative}</span>}{alternatives.filter(c=>c.label!==topic.label).map(c=><button key={c.wikiTitle||c.label} onClick={()=>chooseTopic(c)} disabled={resolving}>{c.label}<ChevronRight size={12}/></button>)}</div><button className="change-subject" onClick={()=>setChanging(!changing)} disabled={resolving}><Search size={14}/>{t.change}</button></div>
       <AnimatePresence>{changing&&<motion.div className="subject-picker" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}><form onSubmit={findSubjects}><Search size={17}/><input autoFocus maxLength={150} aria-label={t.subjectSearch} placeholder={t.subjectSearch} value={query} onChange={e=>setQuery(e.target.value)}/><button className="primary-button" disabled={searching||!query.trim()}>{searching?<LoaderCircle size={16} className="spin"/>:t.find}</button></form>{subjectResults&&<div className="subject-results" aria-label={t.results}>{subjectResults.length?subjectResults.map(c=><button onClick={()=>chooseTopic(c)} key={c.wikiTitle}><BookOpen size={14}/>{c.label}<ChevronRight size={14}/></button>):<p>{t.noSubjects}</p>}</div>}</motion.div>}</AnimatePresence>
-      <div className="gallery-body"><WikipediaContext key={`${topic.label}:${topic.language}`} result={resolving?loading:results.wikipedia} topic={topic} emojiLabel={emoji.labels[locale]} locale={locale} reduced={reduced} retry={()=>void loadSource("wikipedia")} change={()=>setChanging(true)} choose={chooseTopic}/><ArtGallery key={`${topic.label}:${topic.language}:art`} result={resolving?loading:results.art} locale={locale} reduced={reduced} retry={()=>void loadSource("art")} onOpen={()=>{pauseMedia();setActiveVideo(null);}}/>{providers.filter(p=>p!=="wikipedia"&&p!=="art").map(p=><MediaSection key={`${topic.label}:${topic.language}:${p}`} provider={p} result={resolving&&p!=="youtube"?loading:results[p]} locale={locale} reduced={reduced} retry={()=>void loadSource(p)} onPlay={item=>{pauseMedia();setActiveVideo(item);}}/>)}</div>
+      <div className="gallery-body"><WikipediaContext key={`${topic.label}:${topic.language}`} result={resolving?loading:results.wikipedia} topic={topic} emojiLabel={emoji.labels[locale]} locale={locale} reduced={reduced} retry={()=>void loadSource("wikipedia")} change={()=>setChanging(true)} choose={chooseTopic}/><ArtGallery key={`${topic.label}:${topic.language}:art`} result={results.art} locale={locale} reduced={reduced} retry={()=>void loadSource("art")} onOpen={()=>{pauseMedia();setActiveVideo(null);}}/>{providers.filter(p=>p!=="wikipedia"&&p!=="art").map(p=><MediaSection key={`${topic.label}:${topic.language}:${p}`} provider={p} result={results[p]} locale={locale} reduced={reduced} retry={()=>void loadSource(p)} onPlay={item=>{pauseMedia();setActiveVideo(item);}}/>)}</div>
       {activeVideo&&<VideoPlayer key={activeVideo.id} item={activeVideo} locale={locale} onClose={()=>setActiveVideo(null)}/>}
       <footer className="gallery-footer"><Check size={13}/>{t.stop}</footer>
     </motion.div>

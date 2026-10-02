@@ -19,6 +19,24 @@ beforeEach(() => {
 afterEach(() => { clearYouTubeCache(); vi.useRealTimers(); vi.unstubAllEnvs(); });
 
 describe("yt-dlp discovery", () => {
+  it("retries incomplete final selections instead of keeping them for an hour", async () => {
+    vi.stubEnv("YOUTUBE_PROVIDER", "api"); vi.stubEnv("YOUTUBE_API_KEY", "test-key");
+    const candidates = ["abcdefghijk", "lmnopqrstuv", "12345678901"].map(id => ytDlpCandidate(entry(id))!);
+    const api = vi.fn().mockResolvedValueOnce(candidates.slice(0, 1)).mockResolvedValue(candidates);
+    const signal = new AbortController().signal;
+    expect(await discoverYouTube(topic, "en", signal, api)).toHaveLength(1);
+    expect(await discoverYouTube(topic, "en", signal, api)).toHaveLength(3);
+    expect(await discoverYouTube(topic, "en", signal, api)).toHaveLength(3);
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+
+  it("retains English fallback lessons when both localized searches fail", async () => {
+    run.mockImplementation(async (args: string[]) => {
+      if (!args.at(-1)?.endsWith("explained")) throw new Error("Localized search failed");
+      return { entries: [entry(), entry("lmnopqrstuv"), entry("12345678901")] };
+    });
+    expect(await discoverYouTube(topic, "es", new AbortController().signal, vi.fn())).toHaveLength(3);
+  });
   it("works without an API key, deduplicates results, ranks search metadata and caches successful requests", async () => {
     succeed(); const api = vi.fn();
     const results = await discoverYouTube(topic, "en", new AbortController().signal, api);

@@ -13,7 +13,7 @@ export type TopicCandidate = {
 export type RelatedResult = { status: "ready" | "empty" | "error"; topics: TopicCandidate[] };
 export type Resolution = { defaultTopic: TopicCandidate; alternatives: TopicCandidate[] };
 export type MediaItem = {
-  id: string; title: string; sourceUrl: string; previewUrl?: string; embedUrl?: string;
+  id: string; title: string; sourceUrl: string; previewUrl?: string; previewWebpUrl?: string; embedUrl?: string;
   creator?: string; license?: string; licenseUrl?: string; date?: string; kind?: string;
   excerpt?: string; revisionUrl?: string; language?: Locale;
   durationSeconds?: number;
