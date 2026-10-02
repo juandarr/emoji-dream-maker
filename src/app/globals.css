@@ -337,9 +337,35 @@
   font-style:normal;
   font-display:swap;
 }
-.pg-world {will-change:auto}
+.pg-world {will-change:auto;z-index:1}
+/* The rotated drag surface sits below artwork, so every emoji remains directly selectable. */
+.pg-selection-drag {position:absolute;z-index:0;pointer-events:auto;cursor:grab;touch-action:none;transform-origin:center}
 .pg-artwork {display:inline-flex;align-items:center;justify-content:center;width:1em;height:1em;font-size:inherit!important;line-height:1;pointer-events:none;user-select:none}
 /* Noto's advance is 1275 / 1024 em. Normalize it to the existing square artwork box. */
 .pg-artwork .pg-vector-glyph {font-family:"Playground Noto Emoji","Noto Color Emoji","Apple Color Emoji","Segoe UI Emoji",sans-serif;font-size:0.8031372549em!important;font-weight:400;font-style:normal;line-height:1;letter-spacing:0}
 .pg-emoji-credit {font-size:9px!important;color:#8f829f!important;line-height:1.5!important;margin:10px 0 0!important;text-align:right;flex-shrink:0}
 .pg-emoji-credit a {color:#aa96c3;text-decoration:underline;text-underline-offset:2px}
+
+/* Selection tools live at screen size while vector glyphs render at their actual size. */
+.pg-view-tools button[aria-pressed="true"] {background:#e9dcf7;color:#684289}
+.pg-stage .pg-board.select-mode {cursor:crosshair}
+.pg-selection-area,.pg-group-bounds {position:absolute;pointer-events:none;border:1px solid #9e76c7;z-index:3}
+.pg-selection-area {background:#aa80d31a}
+.pg-selection-bounds {border:2px dashed #a57ecb;border-radius:4px;transform-origin:center;box-shadow:0 0 0 1px #ffffffa6}
+.pg-selection-connector {position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none;overflow:hidden}
+.pg-selection-connector line {stroke:#b99bd2;stroke-width:1;vector-effect:non-scaling-stroke}
+.pg-transform-handle {position:absolute;z-index:4;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#faf6ff;color:#795398;border:1px solid #cdb5e3;transform:translate(-50%,-50%);box-shadow:0 2px 8px #402b4b20;touch-action:none}
+.pg-transform-handle.resize {cursor:nwse-resize}.pg-transform-handle.rotate {cursor:grab}
+.pg-stage.transforming .pg-node.selected>span {animation:none}
+.pg-group-inspector {font-size:12px;color:#c7b3d7;line-height:1.7}.pg-group-inspector p {margin-bottom:10px}.pg-group-inspector p+p {font-size:11px;color:#9e95ac}
+@media(max-width:720px) {.pg-space-caption {max-width:calc(100% - 24px);white-space:normal;text-align:center}.pg-transform-handle,.pg-object-delete {width:32px;height:32px}}
+
+.pg-space-toolbar .pg-selection-tool {gap:5px;font-size:10px;padding:6px 8px}
+.pg-selection-count {position:absolute;top:12px;left:12px;z-index:3;pointer-events:none;font-size:10px;color:#88649e;background:#faf6fff0;border-radius:12px;padding:5px 9px}
+@media(max-width:720px) {.pg-selection-tool span {display:none}}
+
+/* Shift temporarily switches the canvas from dragging to ordinary selection. */
+.pg-stage .pg-board.shift-select,.pg-stage .pg-board.shift-select * {cursor:default!important}
+
+.pg-stage.resizing,.pg-stage.resizing * {cursor:var(--pg-resize-cursor,nwse-resize)!important}
+.pg-stage.rotating,.pg-stage.rotating * {cursor:grabbing!important}

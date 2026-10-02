@@ -202,7 +202,7 @@ test("touch can scroll the picker, tap to select and drag the original object",a
     await cdp.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[point]});
     for(let i=1;i<=6;i++)await cdp.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:point.x+10*i,y:point.y+5*i}]});
     await expect(node).toHaveClass(/dragging/);await expect(page.locator(".pg-drag-glyph")).toHaveCount(0);
-    await cdp.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});await expect(node).toHaveAttribute("aria-pressed","false");
+    await cdp.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});await expect(node).toHaveAttribute("aria-pressed","true");
     const after=await node.boundingBox();expect(after!.x-before!.x).toBeCloseTo(60,0);expect(after!.y-before!.y).toBeCloseTo(30,0);
     await picker(page);const tray=await page.getByRole("button",{name:"Add octopus",exact:true}).boundingBox(),canvas=await page.locator(".pg-board").boundingBox();
     const drop={x:canvas!.x+canvas!.width-12,y:canvas!.y+canvas!.height*.6};

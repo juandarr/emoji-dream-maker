@@ -4,7 +4,7 @@ import type { EmojiRecord, Locale } from "@/lib/types";
 export const NODE_LIMIT = 80;
 export type BoardNode = {
   id: string; emojiId: string; glyph: string; label: string; meaning: string;
-  note: string; role: "subject" | "setting" | "mood"; x: number; y: number;
+  note: string; role: "subject" | "setting" | "mood"; x: number; y: number; scale:number; rotation:number;
 };
 export type BoardEdge = { id: string; source: string; target: string; label: string };
 export type Composition = {
@@ -14,7 +14,7 @@ export type Composition = {
 export const emptyComposition = (): Composition => ({ schemaVersion: 1, title: "", nodes: [], edges: [], intent: "", interpretation: "" });
 export const clamp = (n: number) => Math.min(100000, Math.max(-100000, n));
 export function createNode(emoji: EmojiRecord, locale: Locale, id: string, index: number, position?: {x:number;y:number}, glyph?: string): BoardNode {
-  return { id, emojiId: emoji.id, glyph: glyph || emoji.glyph, label: emoji.labels[locale], meaning: defaultTopic(emoji, locale).label, note: "", role: "subject", x: clamp(position?.x ?? 20 + index % 5 * 15), y: clamp(position?.y ?? 24 + Math.floor(index / 5) % 4 * 18) };
+  return { id, emojiId: emoji.id, glyph: glyph || emoji.glyph, label: emoji.labels[locale], meaning: defaultTopic(emoji, locale).label, note: "", role: "subject", scale:1, rotation:0, x: clamp(position?.x ?? 20 + index % 5 * 15), y: clamp(position?.y ?? 24 + Math.floor(index / 5) % 4 * 18) };
 }
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const str = (v: unknown, max: number, required = false): v is string => typeof v === "string" && v.length <= max && (!required || !!v.trim());
@@ -24,7 +24,8 @@ export function parseComposition(value: unknown): Composition {
   if (!object(value) || value.schemaVersion !== 1 || !str(value.title, 120) || !str(value.intent, 1000) || !str(value.interpretation, 4000) || !Array.isArray(value.nodes) || value.nodes.length > NODE_LIMIT || !Array.isArray(value.edges) || value.edges.length > 160) throw new Error("Invalid board or unsupported version.");
   const nodes: BoardNode[] = value.nodes.map(n => {
     if (!object(n) || !id(n.id) || !id(n.emojiId) || !str(n.glyph, 40, true) || !str(n.label, 150, true) || !str(n.meaning, 150, true) || !str(n.note, 500) || !["subject", "setting", "mood"].includes(String(n.role)) || typeof n.x !== "number" || !Number.isFinite(n.x) || Math.abs(n.x) > 100000 || typeof n.y !== "number" || !Number.isFinite(n.y) || Math.abs(n.y) > 100000) throw new Error("Invalid emoji instance.");
-    return { id:n.id, emojiId:n.emojiId, glyph:n.glyph, label:n.label, meaning:n.meaning, note:n.note, role:n.role as BoardNode["role"], x:n.x, y:n.y };
+    if(n.scale!==undefined&&(typeof n.scale!=="number"||!Number.isFinite(n.scale)||n.scale<.2||n.scale>12)||n.rotation!==undefined&&(typeof n.rotation!=="number"||!Number.isFinite(n.rotation)||Math.abs(n.rotation)>360000))throw new Error("Invalid emoji transform.");
+    return { scale:n.scale===undefined?1:n.scale as number, rotation:n.rotation===undefined?0:((n.rotation as number)%360+360)%360, id:n.id, emojiId:n.emojiId, glyph:n.glyph, label:n.label, meaning:n.meaning, note:n.note, role:n.role as BoardNode["role"], x:n.x, y:n.y };
   });
   const ids = new Set(nodes.map(n => n.id));
   if (ids.size !== nodes.length) throw new Error("Duplicate emoji instance IDs.");
@@ -37,6 +38,7 @@ export function parseComposition(value: unknown): Composition {
 }
 export type BoardAction =
   | {type:"add";node:BoardNode} | {type:"update";id:string;patch:Partial<Omit<BoardNode,"id"|"emojiId">>}
+  | {type:"transform";updates:{id:string;patch:Pick<BoardNode,"x"|"y"|"scale"|"rotation">}[]} | {type:"removeMany";ids:string[]}
   | {type:"remove";id:string} | {type:"edge";edge:BoardEdge} | {type:"removeEdge";id:string}
   | {type:"fields";patch:Partial<Pick<Composition,"title"|"intent"|"interpretation">>}
   | {type:"load";board:Composition} | {type:"replace";board:Composition} | {type:"undo"} | {type:"redo"};
@@ -50,6 +52,8 @@ export function boardReducer(state:BoardHistory,action:BoardAction): BoardHistor
   switch(action.type) {
     case "add": if(board.nodes.length < NODE_LIMIT && !board.nodes.some(n=>n.id===action.node.id)) next={...board,nodes:[...board.nodes,action.node]}; break;
     case "update": next={...board,nodes:board.nodes.map(n=>n.id===action.id?{...n,...action.patch}:n)}; break;
+    case "transform": {const updates=new Map(action.updates.map(u=>[u.id,u.patch]));next={...board,nodes:board.nodes.map(n=>updates.has(n.id)?{...n,...updates.get(n.id)!}:n)};break;}
+    case "removeMany": {const ids=new Set(action.ids);next={...board,nodes:board.nodes.filter(n=>!ids.has(n.id)),edges:board.edges.filter(e=>!ids.has(e.source)&&!ids.has(e.target))};break;}
     case "remove": next={...board,nodes:board.nodes.filter(n=>n.id!==action.id),edges:board.edges.filter(e=>e.source!==action.id&&e.target!==action.id)}; break;
     case "edge": if(board.edges.length<160 && action.edge.source!==action.edge.target && [action.edge.source,action.edge.target].every(id=>board.nodes.some(n=>n.id===id))) next={...board,edges:[...board.edges,action.edge]}; break;
     case "removeEdge": next={...board,edges:board.edges.filter(e=>e.id!==action.id)}; break;
