@@ -18,6 +18,7 @@ export type MediaItem = {
   excerpt?: string; revisionUrl?: string; language?: Locale;
   durationSeconds?: number;
   imageUrl?: string; collection?: string; matchedTerm?: string;
+  soundConnection?: { label: string; kind: "direct" | "evocative" };
 };
 export type ProviderStatus = "loading" | "ready" | "empty" | "unavailable" | "error";
 export type ProviderResult = { status: ProviderStatus; items: MediaItem[]; partial?: boolean; message?: string; retryAfter?: number; reason?: "setup" | "credentials" | "quota" | "timeout" | "network" };

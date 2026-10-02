@@ -108,6 +108,34 @@ test("repeated server renders hydrate without accessibility ID mismatches",async
   const errors:string[]=[];page.on("console",message=>{if(message.type()==="error"&&/hydrat|didn't match/i.test(message.text()))errors.push(message.text());});
   await page.reload();await clickEmoji(page,"octopus");await page.reload();await clickEmoji(page,"octopus");expect(errors).toEqual([]);
 });
+for (const locale of ["en", "es"] as const) {
+  test(`sound connections are localized and playback waits for a click (${locale})`, async ({page}) => {
+    if (locale === "es") {
+      await page.setViewportSize({width:390,height:844});
+      await page.getByLabel("Interface language").selectOption("es");
+    }
+    await page.route("**/api/discover", async route => {
+      if (route.request().postDataJSON().provider !== "freesound") return route.fallback();
+      await route.fulfill({json:{status:"ready",partial:true,items:[{
+        id:"underwater",title:"Underwater recording",creator:"Sound creator",sourceUrl:"https://freesound.org/s/1/",
+        previewUrl:"https://media.example.test/preview.mp3",license:"CC0",licenseUrl:"https://creativecommons.org/publicdomain/zero/1.0/",
+        soundConnection:{label:locale==="es"?"ambiente submarino":"underwater ambience",kind:"evocative"},
+      }]}});
+    });
+    await page.getByRole("textbox",{name:locale==="es"?/Busca una palabra/:/Search a word/}).fill("octopus");
+    await clickEmoji(page,locale==="es"?"pulpo":"octopus");
+    await page.getByRole("button",{name:locale==="es"?"Abrir portal":"Open portal",exact:true}).first().click();
+    const sounds = page.locator(".freesound-section");
+    await expect(sounds.locator(".sound-connection")).toHaveText(locale==="es"?"Evoca: ambiente submarino":"Evokes: underwater ambience");
+    await expect(sounds.getByRole("status")).toHaveText(locale==="es"?"No pudimos completar algunas búsquedas de sonidos.":"Some sound searches could not be completed.");
+    await expect(sounds.getByRole("link",{name:"CC0"})).toHaveAttribute("href","https://creativecommons.org/publicdomain/zero/1.0/");
+    const audio = sounds.locator("audio");
+    await expect(audio).toHaveAttribute("preload","none"); expect(await audio.evaluate(el=>(el as HTMLAudioElement).paused)).toBe(true);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.getByRole("button",{name:locale==="es"?"Cerrar galería":"Close gallery",exact:true}).click();
+    await expect(page.locator("audio")).toHaveCount(0);
+  });
+}
 test("emojis orbit upright, double on hover, pause for picking, and resume",async({page})=>{
   await page.locator(".dream-canvas").scrollIntoViewIfNeeded();
   await page.mouse.move(0,0);
