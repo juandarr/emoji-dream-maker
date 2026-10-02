@@ -78,7 +78,7 @@ Favorites store emoji and subject identifiers, not media. Retain the last 50 dis
 | --- | --- |
 | Wikipedia | [MediaWiki REST API](https://www.mediawiki.org/wiki/API:REST_API/Reference/en) search and HTML/metadata. Extract 2–4 opening prose sentences, capped at 150 words, labeled Wikipedia excerpt; include article, revision, and license links. |
 | Videos | [YouTube](https://developers.google.com/youtube/v3/docs/search/list): video-only, embeddable, strict safe search; three results; player loads on click. |
-| GIFs | [GIPHY](https://developers.giphy.com/docs/api/): rating g; six results in returned order, dedicated section and required attribution; direct provider URLs, no proxy/persistence. |
+| GIFs | [GIPHY](https://developers.giphy.com/docs/api/): rating g; search up to 25 candidates and display up to three distinct matches ranked by subject/emoji descriptions, titles, and slugs; dedicated section and required attribution; direct provider URLs, no proxy/persistence. |
 | Sounds | [Freesound](https://freesound.org/docs/api/overview.html): three CC0/CC BY previews; creator/license displayed; click to play. |
 | Art | [Art Institute of Chicago](https://api.artic.edu/docs/): three public-domain works with images; title, artist, date, source; identify paintings where supported. |
 
@@ -110,7 +110,7 @@ Build interaction foundation; then subject/context; then live provider adapters;
 - Rapid subject changes cannot show stale results.
 - Timeout, missing key, empty response, and quota errors leave other sections usable.
 - Wikipedia excerpts exclude navigation/table text and retain attribution.
-- GIPHY ordering/attribution and sound/art rights metadata are preserved.
+- GIF relevance selection is capped at three, with GIPHY attribution and sound/art rights metadata preserved.
 - Playback requires an action and stops when closing.
 - Persistence survives reload; corrupt/unavailable storage cannot crash the app.
 - Reduced motion disables orbits and continuous black-hole shimmer and simplifies reveals. Hover/focus enlargement remains available.

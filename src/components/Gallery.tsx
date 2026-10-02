@@ -106,7 +106,7 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
     try {
       let result:ProviderResult;
       if(provider==="youtube")result=await loadVideos(emoji.id,topic,locale,signal);
-      else if(provider==="giphy")result=await searchGiphy(topic.query,locale,signal);
+      else if(provider==="giphy")result=await searchGiphy(topic.query,locale,signal,{topic,emoji});
       else{
         const response=await fetch("/api/discover",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({emojiId:emoji.id,locale,topic,provider}),signal});
         if(!response.ok)throw new Error("Unavailable"); result=await response.json();
@@ -115,7 +115,7 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
     }catch{
       if(!controller.signal.aborted&&controllers.current.get(provider)===controller)setResults(r=>({...r,[provider]:{status:"error",items:[],reason:signal.aborted?"timeout":"network"}}));
     }
-  },[emoji.id,locale,topic]);
+  },[emoji,locale,topic]);
   const videoIdentity=videoKey(topic,locale);
   const latestLoad=useRef(loadSource);
   useEffect(()=>{latestLoad.current=loadSource;},[loadSource]);

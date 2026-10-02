@@ -333,3 +333,38 @@ test("broken previews explain the failure and a changed subject replaces all ima
   await page.locator(".topic-bar").getByRole("button", { name: "Ocean", exact: false }).click();
   await expect(page.locator(".artwork-card h4").first()).toHaveText("Ocean study 1");await expect(page.locator(".artwork-card h4").filter({ hasText: "Octopus" })).toHaveCount(0);
 });
+
+test("GIF gallery shows the top three relevant animations and refreshes them for a changed subject", async ({ page }) => {
+  test.skip(!process.env.NEXT_PUBLIC_GIPHY_API_KEY, "Run with a browser GIF key (requests are mocked).");
+  const queries: string[] = [];
+  await page.route("https://api.giphy.com/v1/gifs/search?**", async route => {
+    const url = new URL(route.request().url());
+    const query = url.searchParams.get("q")!; queries.push(query);
+    expect(url.searchParams.get("limit")).toBe("25");
+    const item = (id: string, title: string, alt_text?: string) => ({
+      id, title, alt_text, url: `https://giphy.com/gifs/${id}`,
+      images: { fixed_width: { url: `https://media.giphy.com/${id}.gif`, frames: "10" } },
+    });
+    await route.fulfill({ json: { data: query === "Ocean" ? [item("ocean", "Ocean waves GIF"), item("old", "Octopus GIF")] : [
+      item("off", "Dancing cat GIF"), item("related", "Octopi GIF"), item("first", "Octopus waving GIF"),
+      item("second", "Octopus swimming GIF"), item("best", "Underwater GIF", "An octopus moves across the seafloor."),
+      item("fourth", "Octopus resting GIF"),
+    ] } });
+  });
+  await page.route("https://media.giphy.com/**", route => route.fulfill({
+    contentType: "image/gif", body: Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64"),
+  }));
+  await page.getByRole("textbox", { name: /Search a word/ }).fill("octopus");
+  await clickEmoji(page, "octopus");
+  await page.getByRole("button", { name: "Open portal", exact: true }).last().click();
+  const cards = page.locator(".giphy-section .gif-card");
+  await expect(cards).toHaveCount(3);
+  await expect(cards.locator("span")).toHaveText(["Underwater GIF", "Octopus waving GIF", "Octopus swimming GIF"]);
+  await expect(page.locator(".giphy-credit")).toBeVisible();
+  await page.locator(".topic-bar").getByRole("button", { name: "Ocean", exact: false }).click();
+  await expect(cards).toHaveCount(1);
+  await expect(cards.locator("span")).toHaveText(["Ocean waves GIF"]);
+  expect(queries).toEqual(["Octopus", "Ocean"]);
+  await page.getByRole("button", { name: "Close gallery", exact: true }).click();
+  await expect(cards).toHaveCount(0);
+});
