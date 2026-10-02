@@ -396,3 +396,113 @@ test("GIF gallery shows the top three relevant animations and refreshes them for
   await page.getByRole("button", { name: "Close gallery", exact: true }).click();
   await expect(cards).toHaveCount(0);
 });
+
+test("artwork supports pointer-centered wheel zoom, maximum double-click zoom and drag panning", async ({ page }) => {
+  await stubArt(page);await openArt(page);
+  await page.getByRole("button", { name: "Expand image: Octopus study 1", exact: true }).click();
+  const popup = page.locator(".image-dialog"), stage = popup.locator(".image-dialog-stage"), image = popup.locator("img");
+  await expect.poll(() => image.evaluate(el => (el as HTMLImageElement).naturalWidth)).toBe(900);
+  const bounds = (await stage.boundingBox())!;
+  const anchor = { x: bounds.x + bounds.width * .6, y: bounds.y + bounds.height * .55 };
+  const initial = (await image.boundingBox())!;
+  await page.mouse.move(anchor.x, anchor.y);await page.mouse.wheel(0, -120);
+  await expect(popup.locator(".image-zoom-level")).toHaveText("127%");
+  const enlarged = (await image.boundingBox())!;
+  const ratio = enlarged.width / initial.width;
+  expect(Math.abs(enlarged.x + (anchor.x - initial.x) * ratio - anchor.x)).toBeLessThan(2);
+  expect(Math.abs(enlarged.y + (anchor.y - initial.y) * ratio - anchor.y)).toBeLessThan(2);
+  await page.mouse.wheel(0, 60);await expect(popup.locator(".image-zoom-level")).toHaveText("113%");
+  await page.mouse.dblclick(anchor.x, anchor.y);await expect(popup.locator(".image-zoom-level")).toHaveText("400%");
+  await page.mouse.wheel(0, -5000);await expect(popup.locator(".image-zoom-level")).toHaveText("400%");
+  const before = await stage.evaluate(el => ({ left: el.scrollLeft, top: el.scrollTop }));
+  await page.mouse.move(anchor.x, anchor.y);await page.mouse.down();
+  await page.mouse.move(anchor.x + 65, anchor.y + 40, { steps: 5 });
+  await expect(stage).toHaveCSS("cursor", "grabbing");
+  const after = await stage.evaluate(el => ({ left: el.scrollLeft, top: el.scrollTop }));
+  expect(Math.abs(after.left - (before.left - 65))).toBeLessThan(2);
+  expect(Math.abs(after.top - (before.top - 40))).toBeLessThan(2);
+  // Captured dragging continues outside the viewport and ends cleanly there.
+  await page.mouse.move(bounds.x - 10, anchor.y, { steps: 5 });await page.mouse.up();
+  await expect(stage).toHaveCSS("cursor", "grab");
+  await page.mouse.dblclick(anchor.x, anchor.y);await expect(popup.locator(".image-zoom-level")).toHaveText("100%");
+  expect(await stage.evaluate(el => el.scrollLeft === 0 && el.scrollTop === 0)).toBe(true);
+  await page.mouse.wheel(0, 5000);await expect(popup.locator(".image-zoom-level")).toHaveText("100%");
+  await page.mouse.dblclick(anchor.x, anchor.y);await page.keyboard.press("ArrowRight");
+  await expect(popup.getByRole("heading")).toHaveText("Octopus study 2");
+  await expect(popup.locator(".image-zoom-level")).toHaveText("100%");
+  await popup.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await popup.getByRole("button", { name: "Fit image", exact: true }).click();
+  await expect(popup.locator(".image-zoom-level")).toHaveText("100%");
+});
+
+async function stubKeyboardVideo(page: Page, delay = 0) {
+  await page.route("**/api/discover", async route => {
+    if (route.request().postDataJSON().provider !== "youtube") return route.fallback();
+    await route.fulfill({ json: { status: "ready", items: [{ id: "keys", title: "Keyboard lesson", creator: "Teacher", sourceUrl: "https://www.youtube.com/watch?v=keys", embedUrl: "https://www.youtube-nocookie.com/embed/keys" }] } });
+  });
+  await page.route("https://www.youtube-nocookie.com/embed/keys**", route => route.fulfill({ contentType: "text/html", body: "<p>Keyboard lesson</p>" }));
+  await page.route("https://www.youtube.com/iframe_api", async route => {
+    if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+    await route.fulfill({ contentType: "text/javascript", body: `
+      window.testPlayer = { state: 1, calls: [] };
+      window.YT = { Player: class {
+        constructor(iframe, options) { setTimeout(() => options.events.onReady({ target: this }), 0); }
+        getPlayerState() { return window.testPlayer.state; }
+        pauseVideo() { window.testPlayer.calls.push('pause'); window.testPlayer.state = 2; }
+        playVideo() { window.testPlayer.calls.push('play'); window.testPlayer.state = 1; }
+        destroy() { window.testPlayer.calls.push('destroy'); }
+      } };
+      window.onYouTubeIframeAPIReady();
+    ` });
+  });
+  await page.getByRole("textbox", { name: /Search a word/ }).fill("octopus");
+  await clickEmoji(page, "octopus");await page.getByRole("button", { name: "Open portal", exact: true }).first().click();
+  await page.getByRole("button", { name: "Play video: Keyboard lesson", exact: true }).click();
+}
+
+test("video dialog Space toggles current playback and F toggles fullscreen without closing", async ({ page }) => {
+  await stubKeyboardVideo(page);
+  const popup = page.locator(".video-dialog"), screen = popup.locator(".video-dialog-screen");
+  await expect(popup.locator("iframe")).toHaveAttribute("src", /enablejsapi=1/);
+  const src = new URL((await popup.locator("iframe").getAttribute("src"))!);
+  expect(src.searchParams.get("origin")).toBe(new URL(page.url()).origin);
+  await expect.poll(() => page.evaluate(() => !!(window as any).testPlayer)).toBe(true);
+  await page.keyboard.press("Space");
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.calls)).toEqual(["pause"]);
+  await expect(popup).toBeVisible();
+  await page.keyboard.press("Space");
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.calls)).toEqual(["pause", "play"]);
+  // A pause through YouTube's own controls must also be reflected in the next shortcut.
+  await page.evaluate(() => { (window as any).testPlayer.state = 2; });
+  await page.keyboard.press("Space");
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.calls)).toEqual(["pause", "play", "play"]);
+  await page.keyboard.press("Control+f");expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+  await page.keyboard.press("f");
+  await expect.poll(() => page.evaluate(() => document.fullscreenElement?.className)).toBe("video-dialog-screen");
+  const viewport = page.viewportSize()!, fullscreen = (await screen.boundingBox())!;
+  expect(fullscreen.width).toBe(viewport.width);expect(fullscreen.height).toBe(viewport.height);
+  await page.keyboard.press("Space");
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.state)).toBe(2);
+  // Holding a key must not rapidly toggle playback or fullscreen.
+  await page.keyboard.down("f");await page.keyboard.down("f");await page.keyboard.up("f");
+  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+  await page.keyboard.down("Space");await page.keyboard.down("Space");await page.keyboard.up("Space");
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.state)).toBe(1);
+  await popup.getByRole("button", { name: "Close video", exact: true }).click();
+  await expect(popup).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).testPlayer.calls.at(-1))).toBe("destroy");
+  await expect(page.getByRole("button", { name: "Play video: Keyboard lesson", exact: true })).toBeFocused();
+  // Reopening reuses the loaded API, but creates a new player.
+  await page.getByRole("button", { name: "Play video: Keyboard lesson", exact: true }).click();
+  await page.keyboard.press("Space");
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer.state)).toBe(2);
+  await page.keyboard.press("Escape");await expect(popup).toHaveCount(0);
+});
+
+test("Space pressed while the YouTube API loads pauses once the player is ready", async ({ page }) => {
+  await stubKeyboardVideo(page, 800);
+  await page.keyboard.press("Space");
+  await expect(page.locator(".video-dialog")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).testPlayer?.calls)).toEqual(["pause"]);
+  await page.keyboard.press("Escape");await expect(page.locator(".video-dialog")).toHaveCount(0);
+});
