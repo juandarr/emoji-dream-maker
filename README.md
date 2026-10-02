@@ -2,6 +2,26 @@
 
 A personal emoji explorer: bilingual keyword search, a cosmic constellation, and a drag-and-drop portal into live media and Wikipedia context. The agreed specification is in [emoji-app-spec.md](emoji-app-spec.md).
 
+## Version waypoints
+
+These screenshots show the English **Discover** screen built from each exact Git tag, with default preferences and empty favorites/history. Captured on October 2, 2026 from local production builds at the same desktop viewport; each image includes the full page. The animated canvas is shown at one moment in its steady state.
+
+### v0.1.0 — Initial explorer
+
+[Release](https://github.com/juandarr/emoji-dream-maker/releases/tag/v0.1.0) · [Tagged source](https://github.com/juandarr/emoji-dream-maker/tree/v0.1.0) · [Status snapshot](docs/releases/v0.1.0.md)
+
+The original cosmic interface: bilingual search, category filters, orbiting emojis, a golden portal, and browser-local favorites and history.
+
+![Dream Maker v0.1.0: original English Discover screen with the golden portal and cosmic sidebar](docs/releases/screenshots/v0.1.0-discover.jpg)
+
+### v0.2.0 — Refined discovery and gravitational animation
+
+[Release](https://github.com/juandarr/emoji-dream-maker/releases/tag/v0.2.0) · [Tagged source](https://github.com/juandarr/emoji-dream-maker/tree/v0.2.0) · [Status snapshot](docs/releases/v0.2.0.md) · [Changes since v0.1.0](https://github.com/juandarr/emoji-dream-maker/compare/v0.1.0...v0.2.0)
+
+Simpler text, a new mascot, refined colors, and a rounded orange accretion disk with three orbit guides. Dragging adds directional lensing, proximity-driven acceleration, and white energy during rapid movement. This waypoint also delivers museum artwork, improved video/sound/GIF selection, expanded media controls, and more resilient loading; see the status snapshot for details.
+
+![Dream Maker v0.2.0: refined English Discover screen with the orange accretion disk, three emoji orbit guides, and new mascot](docs/releases/screenshots/v0.2.0-discover.jpg)
+
 ## Start locally
 
 Requires Node.js 20.19+ (Node 24 recommended).
