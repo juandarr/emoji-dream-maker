@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, getClientRect, pointerWithin, rectIntersection, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
-import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
+import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, getClientRect, pointerWithin, rectIntersection, useDndMonitor, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
+import type { DragEndEvent, DragMoveEvent, DragStartEvent } from "@dnd-kit/core";
 import { AnimatePresence } from "motion/react";
 import dynamic from "next/dynamic";
 import { ArrowRight, ChevronLeft, ChevronRight, Compass, Grid2X2, Heart, History, List, Moon, Orbit, Search, Shuffle, Trash2, X } from "lucide-react";
@@ -23,10 +23,20 @@ function EmojiButton({emoji,locale,selected,onSelect,position,view}:{emoji:Emoji
   </button>;
   return view==="constellation"?<div className="emoji-orbit" style={{"--angle":`${position.angle}deg`,"--radius":`${position.radius}%`,"--period":`${position.duration}s`} as React.CSSProperties}>{button}</div>:button;
 }
-function Portal({locale,selected,onOpen}:{locale:Locale;selected:boolean;onOpen:()=>void}) {
-  const {setNodeRef,isOver}=useDroppable({id:"portal"});
+function Portal({locale,selected,onOpen,reduced,paused}:{locale:Locale;selected:boolean;onOpen:()=>void;reduced:boolean;paused:boolean}) {
+  const {setNodeRef,isOver,node}=useDroppable({id:"portal"});
+  const [proximity,setProximity]=useState(0);
+  const approach=({active}:DragMoveEvent|DragStartEvent)=>{
+    const emoji=active.rect.current.translated||active.rect.current.initial;
+    const target=node.current?.getBoundingClientRect();
+    if(!emoji||!target)return;
+    const distance=Math.hypot(emoji.left+emoji.width/2-target.left-target.width/2,emoji.top+emoji.height/2-target.top-target.height/2);
+    const closeness=Math.max(0,1-distance/(target.width*1.7));
+    setProximity(closeness*closeness*(3-2*closeness));
+  };
+  useDndMonitor({onDragStart:approach,onDragMove:approach,onDragEnd:()=>setProximity(0),onDragCancel:()=>setProximity(0)});
   const t=messages[locale];
-  return <div ref={setNodeRef} className={`portal-target ${isOver?"over":""}`}><button className="portal" onClick={onOpen} disabled={!selected} aria-label={t.open}><BlackHole/></button><span className="portal-instruction">{t.portalHint}</span></div>;
+  return <div ref={setNodeRef} className={`portal-target ${isOver?"over":""}`}><button className="portal" onClick={onOpen} disabled={!selected} aria-label={t.open}><BlackHole proximity={proximity} reduced={reduced} paused={paused}/></button><span className="portal-instruction">{t.portalHint}</span></div>;
 }
 const stars=Array.from({length:65},(_,i)=>({left:`${(i*37+13)%100}%`,top:`${(i*61+7)%100}%`,opacity:.15+(i%4)*.13,size:i%9===0?3:1.4}));
 // Orbit rotations and portal translations position these nodes. Keep them in
@@ -108,9 +118,9 @@ export default function Explorer() {
           <div className="explorer-workspace"><div className="canvas-column"><div className="canvas-toolbar"><span><span className="count-dot"/>{matches.length.toLocaleString(locale)} {t.matches}</span><div className="view-switch" aria-label={t.view}>{([{value:"constellation",Icon:Orbit,label:t.constellation},{value:"grid",Icon:Grid2X2,label:t.grid},{value:"list",Icon:List,label:t.list}] as const).map(({value,Icon,label})=><button key={value} aria-label={label} title={label} aria-pressed={prefs.view===value} className={prefs.view===value?"active":""} onClick={()=>setPrefs(p=>({...p,view:value}))}><Icon size={16}/></button>)}</div></div>
           <DndContext id="emoji-constellation" sensors={sensors} measuring={dragMeasuring} collisionDetection={args=>{const hits=pointerWithin(args);return hits.length?hits:rectIntersection(args);}} onDragStart={startDrag} onDragEnd={endDrag} onDragCancel={()=>setDragging(null)}>
             <div className={`dream-canvas ${prefs.view} ${dragging?"is-dragging":""} ${gallery?"paused":""}`}>
-              <div className="starfield" aria-hidden="true">{stars.map((s,i)=><i key={i} style={{left:s.left,top:s.top,opacity:s.opacity,width:s.size,height:s.size}}/>)}</div><div className="orbit-guide guide-one" aria-hidden="true"/><div className="orbit-guide guide-two" aria-hidden="true"/>
+              <div className="starfield" aria-hidden="true">{stars.map((s,i)=><i key={i} style={{left:s.left,top:s.top,opacity:s.opacity,width:s.size,height:s.size}}/>)}</div><div className="orbit-guide guide-one" aria-hidden="true"/><div className="orbit-guide guide-middle" aria-hidden="true"/><div className="orbit-guide guide-two" aria-hidden="true"/>
               <div className="canvas-corner top-left"/><div className="canvas-corner bottom-right"/>
-              <Portal locale={locale} selected={!!selected} onOpen={()=>selected&&open(selected,selectedGlyph)}/>
+              <Portal locale={locale} selected={!!selected} onOpen={()=>selected&&open(selected,selectedGlyph)} reduced={reduced} paused={!!gallery}/>
               <div className="emoji-field" aria-label={t.matches}>{visible.map((emoji,i)=><EmojiButton key={emoji.id} emoji={emoji} locale={locale} selected={selected?.id===emoji.id} onSelect={()=>choose(emoji)} position={positions[i]} view={prefs.view}/>)}</div>
               {!visible.length&&<div className="canvas-empty"><Search size={26}/><h3>{t.empty}</h3><p>{t.emptyHint}</p></div>}
             </div>

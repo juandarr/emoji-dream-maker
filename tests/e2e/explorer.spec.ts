@@ -188,6 +188,51 @@ test("drag previews preserve the grab point across orbital positions",async({pag
   }
 });
 
+test("black hole light keeps flowing during drag and accelerates with proximity",async({page})=>{
+  await page.getByRole("textbox",{name:/Search a word/}).fill("octopus");
+  await expect(page.locator(".emoji-button")).toHaveCount(1);
+  await page.locator(".dream-canvas").scrollIntoViewIfNeeded();
+  await page.mouse.move(0,0);
+  const flow=page.locator(".black-hole-flow").first();
+  const rate=()=>flow.evaluate(el=>el.getAnimations()[0]?.playbackRate||0);
+  const time=()=>flow.evaluate(el=>Number(el.getAnimations()[0]?.currentTime));
+  await expect.poll(rate).toBe(1);
+  const idle=await time();await page.waitForTimeout(150);
+  expect(await time()).toBeGreaterThan(idle);
+
+  const emoji=page.getByLabel("octopus",{exact:true});
+  await emoji.hover({force:true});
+  const source=(await emoji.boundingBox())!;
+  const target=(await page.locator(".portal").boundingBox())!;
+  const center={x:target.x+target.width/2,y:target.y+target.height/2};
+  await page.mouse.move(source.x+source.width/2,source.y+source.height/2);
+  await page.mouse.down();
+  await page.mouse.move(center.x+target.width,center.y,{steps:10});
+  await expect(page.locator(".drag-ghost")).toBeVisible();
+  await expect.poll(rate).toBeGreaterThan(2);
+  const far=await rate();
+  const flowing=await time();await page.waitForTimeout(150);
+  expect(await time()).toBeGreaterThan(flowing);
+  await page.mouse.move(center.x+target.width*.45,center.y,{steps:10});
+  await expect.poll(rate).toBeGreaterThan(far+.8);
+  const nearer=await rate();
+  await page.mouse.move(center.x,center.y,{steps:10});
+  await expect.poll(rate).toBeGreaterThan(nearer+.3);
+  await expect.poll(rate).toBeGreaterThan(5.3);
+  await page.mouse.move(center.x+target.width,center.y,{steps:10});
+  await expect.poll(rate).toBeLessThan(3.5);
+  await page.keyboard.press("Escape");await page.mouse.up();
+  await expect.poll(rate).toBe(1);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await page.getByRole("button",{name:"Reduce motion",exact:true}).click();
+  await expect.poll(()=>flow.evaluate(el=>el.getAnimations().length)).toBe(0);
+  await page.getByRole("button",{name:"Reduce motion",exact:true}).click();
+  await expect.poll(rate).toBe(1);
+  await page.emulateMedia({reducedMotion:"reduce"});
+  await expect.poll(()=>flow.evaluate(el=>el.getAnimations().length)).toBe(0);
+});
+
 test("related articles open a fresh summary and back restores the exploration",async({page})=>{
   await page.getByRole("textbox",{name:/Search a word/}).fill("octopus");await clickEmoji(page,"octopus");await page.getByRole("button",{name:"Open portal",exact:true}).first().click();
   await expect(page.getByText("Context for Octopus.",{exact:false})).toBeVisible();

@@ -65,6 +65,7 @@
   animation-play-state: paused;
 }
 .constellation .guide-one { width: 58%; height: 58%; }
+.constellation .guide-middle { width: 70%; height: 70%; border-color: #c393bc1c; }
 .constellation .guide-two { width: 82%; height: 82%; border-color: #d5a66e15; }
 .dream-canvas {
   background: radial-gradient(ellipse at 50% 50%, #6d45252b 0%, #20162d20 33%, #11121d 75%);
@@ -100,20 +101,23 @@
   top: -12%;
   overflow: visible;
   pointer-events: none;
-  transition: filter 220ms ease;
+  --accretion-energy: 0;
+  filter: brightness(calc(1 + var(--accretion-energy) * .3));
 }
-.black-hole-aura { animation: accretion-aura 7s ease-in-out infinite; }
-.black-hole-light { animation: accretion-glimmer 4.8s ease-in-out infinite; }
-.black-hole-stream { animation: accretion-stream 12s linear infinite; }
-.portal:hover .black-hole,
-.portal-target.over .black-hole { filter: brightness(1.35) drop-shadow(0 0 14px #ffbd6960); }
-.portal-target.over .black-hole { filter: brightness(1.65) drop-shadow(0 0 23px #ffc47a90); }
-.is-dragging .black-hole *, .paused .black-hole * { animation-play-state: paused; }
+.black-hole-aura { animation: accretion-aura 8s ease-in-out infinite; }
+.black-hole-emission { animation: accretion-glimmer 6s ease-in-out infinite; }
+.black-hole-flow {
+  animation: accretion-flow var(--flow-period, 18s) linear infinite;
+  animation-delay: var(--flow-delay, -3s);
+}
+.black-hole-flow-reverse { animation-direction: reverse; }
+.black-hole-photon { --flow-period: 24s; }
+.paused .black-hole * { animation-play-state: paused; }
 .grid .portal-target .portal-instruction,
 .list .portal-target .portal-instruction { top: calc(100% + 7px); }
-@keyframes accretion-aura { 0%,100% { opacity: .7; } 50% { opacity: 1; } }
-@keyframes accretion-glimmer { 0%,100% { opacity: .78; } 50% { opacity: 1; } }
-@keyframes accretion-stream { to { stroke-dashoffset: -168; } }
+@keyframes accretion-aura { 0%,100% { opacity: .65; } 50% { opacity: .95; } }
+@keyframes accretion-glimmer { 0%,100% { opacity: .86; } 50% { opacity: 1; } }
+@keyframes accretion-flow { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -1000; } }
 
 /* A readable knowledge panel, followed by the paths out of the article. */
 .exploration-trail{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 30px 16px;font-size:11px;color:#a18cae}.exploration-trail button{color:#dcc0ef;text-align:left}.exploration-trail span{margin-left:auto;white-space:nowrap}.concept-caption{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:10px;color:#9b87aa;margin-bottom:14px;line-height:1.8}.concept-caption strong{font-weight:500;color:#c7b3d5}.knowledge-section .wiki-content{padding:27px;background:radial-gradient(ellipse at 0 0,#3c244550,transparent 75%),#19131f}.knowledge-section .wiki-content h4{font-size:25px;margin:15px 0}.knowledge-section .wiki-content>p{font-size:15px;line-height:1.9;color:#cfbddb;max-width:74ch}.wiki-actions{display:flex;align-items:center;flex-wrap:wrap;gap:18px;margin-top:22px}.wiki-actions a,.wiki-actions button{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:#c8a4e1}.wiki-actions .wiki-read{padding:10px 14px;border:1px solid #674977;border-radius:8px;background:#35243f;color:#efdcff}.wiki-actions button:hover,.wiki-actions a:hover{color:#fff}.related-topics{padding:22px 0 2px}.related-topics>h4{font-family:var(--font-heading);font-size:19px;font-weight:500;color:#dcc7eb;display:flex;align-items:center;gap:10px}.related-topics>h4 span{color:#ad7fc4}.related-topics>p{font-size:11px;line-height:1.7;color:#a48bb5;margin-top:7px}.related-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}.related-grid button{display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;padding:16px;background:#1e1627;border:1px solid #453050;border-radius:10px;transition:background .15s,border-color .15s}.related-grid button:hover{background:#302039;border-color:#9268a8}.related-grid strong{font-size:13px;line-height:1.5;font-weight:500;color:#dec5ee;display:block}.related-grid small{font-size:11px;line-height:1.6;color:#a58daf;display:block;margin-top:5px}.related-grid svg{flex-shrink:0;color:#a278ba}.related-status{font-size:11px;color:#a58daf;line-height:1.7;display:flex;gap:15px;margin-top:15px}.related-status button{color:#dec5ee;text-decoration:underline}.subject-picker input{min-width:0}.gallery-header h2:focus-visible{outline:2px solid #9770b6;outline-offset:5px}.wiki-unavailable h4{font-size:21px!important}
