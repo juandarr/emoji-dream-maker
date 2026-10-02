@@ -2,6 +2,11 @@
 
 A personal emoji explorer: bilingual keyword search, a cosmic constellation, and a drag-and-drop portal into live media and Wikipedia context. The agreed specification is in [emoji-app-spec.md](emoji-app-spec.md).
 
+## Architecture and future planning
+
+- [Current architecture overview](docs/architecture-overview.md): frameworks, components, request flow, domain models, persistence, caches, provider boundaries, and diagrams.
+- [Future improvements and playground plan](docs/future-improvements.md): an emoji composition editor, proposed storage and generation models, staged delivery, and other improvements. This is a planning document; its proposed features are not implemented.
+
 ## Version waypoints
 
 These screenshots show the English **Discover** screen built from each exact Git tag, with default preferences and empty favorites/history. Captured on October 2, 2026 from local production builds at the same desktop viewport; each image includes the full page. The animated canvas is shown at one moment in its steady state.
