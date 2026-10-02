@@ -32,6 +32,7 @@ test("bilingual search, keyboard reveal, favorites, history and persistence",asy
   await page.getByRole("button",{name:/History/}).click();await expect(page.locator(".saved-card")).toHaveCount(1);await page.getByRole("button",{name:"Clear all"}).click();await expect(page.locator(".saved-card")).toHaveCount(0);
 });
 test("dragging into the portal opens the same subject and Escape closes",async({page})=>{
+  const errors:Error[]=[];page.on("pageerror",error=>errors.push(error));
   await page.getByRole("textbox",{name:/Search a word/}).fill("octopus");
   const emoji=page.getByLabel("octopus",{exact:true});await expect(page.locator(".emoji-button")).toHaveCount(1);
   await page.locator(".dream-canvas").scrollIntoViewIfNeeded();
@@ -45,7 +46,14 @@ test("dragging into the portal opens the same subject and Escape closes",async({
   await page.mouse.move(end!.x+end!.width/2,end!.y+end!.height/2,{steps:20});
   await expect(page.locator(".drag-ghost")).toHaveCSS("font-size",`${dragFont}px`);
   await page.mouse.up();
-  await expect(page.getByRole("dialog")).toBeVisible();await expect(page.getByRole("heading",{name:"Octopus",exact:true,level:2})).toBeVisible();await page.keyboard.press("Escape");await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("dialog",{name:"Octopus",exact:true})).toBeVisible();
+  await expect(page.getByRole("heading",{name:"Octopus",exact:true,level:2})).toBeVisible();
+  for(const section of [".wikipedia-section",".art-section",".youtube-section",".giphy-section",".freesound-section"]){
+    await expect(page.locator(section)).toHaveCount(1);
+  }
+  await expect(page.getByRole("heading",{name:"The visual gallery",exact:true})).toBeVisible();
+  await page.keyboard.press("Escape");await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(errors).toEqual([]);
 });
 test("subject changes discard stale media while other providers remain usable",async({page})=>{
   await page.unroute("**/api/discover");

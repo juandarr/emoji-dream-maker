@@ -62,7 +62,7 @@ export async function discover(input: DiscoverInput, signal: AbortSignal): Promi
       console.info(JSON.stringify({provider,durationMs:Date.now()-start,status:result.status,partial:result.partial}));
       return result;
     }
-    const items=await ({wikipedia:()=>wikipedia(topic,signal),youtube:()=>youtube(topic,locale,signal),freesound:()=>freesound(topic,signal)})[provider]();
+    const items=await ({wikipedia:()=>wikipedia(topic,signal),youtube:()=>discoverYouTube(topic,locale,signal,apiSignal=>youtubeApi(topic,locale,apiSignal)),freesound:()=>freesound(topic,signal)})[provider]();
     console.info(JSON.stringify({provider,durationMs:Date.now()-start,status:items.length?"ready":"empty"}));
     return {status:items.length?"ready":"empty",items};
   } catch(error) {
