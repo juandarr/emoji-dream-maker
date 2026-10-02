@@ -16,7 +16,7 @@ async function open(page:Page) {
   await page.goto("/");await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-board")).toBeVisible();
 }
 async function picker(page:Page) {if(!await page.getByRole("textbox",{name:"Search emojis in English or Spanish"}).isVisible())await page.getByRole("button",{name:"Open emoji picker",exact:true}).click();}
-async function add(page:Page,query:string,label:string) {await picker(page);await page.getByRole("textbox",{name:"Search emojis in English or Spanish"}).fill(query);await page.getByRole("button",{name:`Add ${label}`,exact:true}).click();await page.locator(".pg-node").last().focus();await page.keyboard.press("Enter");}
+async function add(page:Page,query:string,label:string) {await picker(page);await page.getByRole("textbox",{name:"Search emojis in English or Spanish"}).fill(query);await page.getByRole("button",{name:`Add ${label}`,exact:true}).click();await page.getByRole("button",{name:"Close emoji picker",exact:true}).click();await page.locator(".pg-node").last().focus();await page.keyboard.press("Enter");}
 test("board authoring, independent meanings, relationships, undo and reload",async({page})=>{
   await open(page);await expect(page.locator(".pg-board")).toHaveCSS("background-color","rgb(255, 255, 255)");
   await add(page,"red heart","red heart");await page.getByRole("button",{name:"Duplicate",exact:true}).click();
@@ -64,7 +64,7 @@ test("connection and provider failures preserve the authored board",async({page}
 test("phone tap flow and Spanish meanings have no horizontal overflow",async({page})=>{
   await page.setViewportSize({width:390,height:844});await open(page);await page.getByLabel("Interface language").selectOption("es");
   await page.getByRole("button",{name:"Abrir selector de emojis",exact:true}).click();await page.getByLabel("Busca emojis en inglés o español").fill("pulpo");await page.getByRole("button",{name:"Añadir pulpo",exact:true}).click();await expect(page.locator(".pg-node")).toHaveAttribute("aria-label",/Octopoda/);
-  await page.getByRole("button",{name:"Abrir selector de emojis",exact:true}).click();await page.getByLabel("Ordenar emojis").selectOption("alphabetical");await page.getByLabel("Categoría",{exact:true}).selectOption("3");await expect(page.locator(".pg-palette-emoji")).toHaveCount(1);
+  await expect(page.getByRole("dialog",{name:"Biblioteca de emojis",exact:true})).toBeVisible();await page.getByLabel("Ordenar emojis").selectOption("alphabetical");await page.getByLabel("Categoría",{exact:true}).selectOption("3");await expect(page.locator(".pg-palette-emoji")).toHaveCount(1);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.evaluate(()=>window.scrollTo(0,0));
   await page.screenshot({path:"/tmp/playground-phone.png",fullPage:true});
@@ -99,7 +99,7 @@ test("storage failure still allows authoring and corrupt imports keep the board"
 });
 
 test("object clicks toggle selection; dragging stays unselected and deletes undo cleanly",async({page})=>{
-  await open(page);await picker(page);await page.getByLabel("Search emojis in English or Spanish").fill("octopus");await page.getByRole("button",{name:"Add octopus",exact:true}).click();
+  await open(page);await picker(page);await page.getByLabel("Search emojis in English or Spanish").fill("octopus");await page.getByRole("button",{name:"Add octopus",exact:true}).click();await page.getByRole("button",{name:"Close emoji picker",exact:true}).click();
   const node=page.locator(".pg-node");await expect(node).toHaveAttribute("aria-pressed","false");
   await node.click();await expect(node).toHaveAttribute("aria-pressed","true");await expect(page.getByRole("button",{name:"Delete selected object"})).toBeVisible();
   await expect(node.locator(":scope > span")).toHaveCSS("animation-name","pg-object-float");
@@ -140,7 +140,7 @@ test("fullscreen keeps the floating picker, scaled dragging, and screen-sized zo
   await expect(page.locator(".pg-stage")).toHaveClass(/is-fullscreen/);
   await expect.poll(()=>page.evaluate(()=>document.fullscreenElement?.classList.contains("pg-stage"))).toBe(true);
   await picker(page);await expect(page.getByRole("dialog",{name:"Emoji library",exact:true})).toBeVisible();await page.getByLabel("Search emojis in English or Spanish").fill("octopus");await page.getByRole("button",{name:"Add octopus",exact:true}).click();
-  const node=page.locator(".pg-node");await expect(node).toHaveAttribute("aria-pressed","false");await expect(node).toBeInViewport();
+  await page.getByRole("button",{name:"Close emoji picker",exact:true}).click();const node=page.locator(".pg-node");await expect(node).toHaveAttribute("aria-pressed","false");await expect(node).toBeInViewport();
   const canvas=page.locator(".pg-board"),rect=await canvas.boundingBox();await page.mouse.move(rect!.x+rect!.width/2,rect!.y+rect!.height/2);await page.mouse.wheel(0,-20000);
   const zoom=Number((await page.getByLabel("Canvas zoom").textContent())!.replace("%",""))/100;
   expect(zoom*40).toBeCloseTo(Math.min(rect!.width,rect!.height),-1);await expect(page.getByRole("button",{name:"Zoom in",exact:true})).toBeDisabled();
@@ -176,7 +176,7 @@ test("phone fullscreen fallback, picker scroll, reduced motion and focus stay us
   await page.addInitScript(()=>{Object.defineProperty(Element.prototype,"requestFullscreen",{value:undefined});});
   await open(page);await page.getByRole("button",{name:"Enter fullscreen"}).click();await expect(page.locator(".pg-stage")).toHaveClass(/is-fullscreen/);
   await picker(page);await expect(page.getByLabel("Search emojis in English or Spanish")).toBeFocused();await page.getByLabel("Search emojis in English or Spanish").fill("octopus");await page.getByRole("button",{name:"Add octopus",exact:true}).click();
-  await expect(page.getByRole("button",{name:"Open emoji picker"})).toBeFocused();
+  await expect(page.getByRole("dialog",{name:"Emoji library",exact:true})).toBeVisible();await page.getByRole("button",{name:"Close emoji picker",exact:true}).click();await expect(page.getByRole("button",{name:"Open emoji picker"})).toBeFocused();
   const node=page.locator(".pg-node");await node.click();await expect(node.locator(":scope > span")).toHaveCSS("animation-name","none");await expect(page.getByRole("button",{name:"Delete selected object"})).toBeVisible();
   await page.screenshot({path:"/tmp/canvas-phone-fullscreen.png"});
   await picker(page);await page.getByLabel("Search emojis in English or Spanish").fill("");
@@ -197,7 +197,7 @@ test("touch can scroll the picker, tap to select and drag the original object",a
     await cdp.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});
     await expect.poll(()=>palette.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
     await page.getByLabel("Search emojis in English or Spanish").fill("octopus");await page.getByRole("button",{name:"Add octopus",exact:true}).tap();
-    const node=page.locator(".pg-node");await expect(node).toHaveAttribute("aria-pressed","false");await node.tap();await expect(node).toHaveAttribute("aria-pressed","true");
+    const node=page.locator(".pg-node");await expect(node).toHaveAttribute("aria-pressed","false");await page.getByRole("button",{name:"Close emoji picker",exact:true}).tap();await node.tap();await expect(node).toHaveAttribute("aria-pressed","true");
     const before=await node.boundingBox(),point={x:before!.x+before!.width/2,y:before!.y+before!.height/2};
     await cdp.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[point]});
     for(let i=1;i<=6;i++)await cdp.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:point.x+10*i,y:point.y+5*i}]});

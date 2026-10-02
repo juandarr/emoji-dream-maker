@@ -12,14 +12,14 @@ import {fitCamera,GLYPH_SIZE,maxZoom,MIN_ZOOM,worldPoint,zoomAt,type Camera,type
 import {resizeCursor,rotatePoint,selectionBounds,selectionFrame,transformNodes,type Bounds,type SelectionFrame} from "./transforms";
 
 import {emojiShape} from "./emoji-shape";
-import {pointInShape,shapeIntersectsArea,type GlyphShape} from "./shapes";
+import {pointInShape,pointerEdgeTolerance,shapeIntersectsArea,type GlyphShape} from "./shapes";
 
 export type CanvasGeometry={camera:Camera;width:number;height:number};
-type Props={board:Composition;locale:Locale;selectedIds:string[];onSelect:(ids:string[])=>void;onTransform:(nodes:BoardNode[])=>void;onRemove:(ids:string[])=>void;onAdd:()=>void;picker:ReactNode;overlay:ReactNode;toolbar:ReactNode;boardRef:React.RefObject<HTMLDivElement|null>;geometryRef:React.RefObject<CanvasGeometry>;pickerOpen:boolean;setPickerOpen:(value:boolean)=>void};
+type Props={board:Composition;locale:Locale;selectedIds:string[];onSelect:(ids:string[])=>void;onTransform:(nodes:BoardNode[])=>void;onRemove:(ids:string[])=>void;onAdd:()=>void;picker:ReactNode;overlay:ReactNode;toolbar:ReactNode;boardRef:React.RefObject<HTMLDivElement|null>;geometryRef:React.RefObject<CanvasGeometry>;pickerOpen:boolean;trayDragging:boolean;setPickerOpen:(value:boolean)=>void};
 type ObjectGesture={id:number;kind:"move"|"resize"|"rotate";start:Point;nodes:BoardNode[];preview:BoardNode[];center:Point;moved:boolean;keepSelection:boolean;lastAngle:number;angle:number;element:HTMLElement;clickId:string|null;additive:boolean;frame:SelectionFrame};
-export default function Canvas({board,locale,selectedIds,onSelect,onTransform,onRemove,onAdd,picker,overlay,toolbar,boardRef,geometryRef,pickerOpen,setPickerOpen}:Props) {
+export default function Canvas({board,locale,selectedIds,onSelect,onTransform,onRemove,onAdd,picker,overlay,toolbar,boardRef,geometryRef,pickerOpen,trayDragging,setPickerOpen}:Props) {
   const t=playgroundLabels[locale];
-  const stageRef=useRef<HTMLDivElement|null>(null),pickerButton=useRef<HTMLButtonElement|null>(null),wasPickerOpen=useRef(false);
+  const stageRef=useRef<HTMLDivElement|null>(null),pickerButton=useRef<HTMLButtonElement|null>(null),wasPickerOpen=useRef(false),restorePickerFocus=useRef(true);
   const {setNodeRef,isOver}=useDroppable({id:"composition-board"});
   const [camera,setCamera]=useState<Camera>({x:0,y:0,zoom:1}),[size,setSize]=useState({width:600,height:500});
   const [world,setWorld]=useState({width:600,height:500});
@@ -49,7 +49,11 @@ export default function Canvas({board,locale,selectedIds,onSelect,onTransform,on
     const glyph=boardRef.current?.querySelector(".pg-vector-glyph");
     return glyph?emojiShape(node.glyph,getComputedStyle(glyph).fontFamily):null;
   }
-  function hitObject(p:Point){return [...nodes].reverse().find(n=>{const shape=nodeShape(n);return shape&&pointInShape(n,p,world,shape);});}
+  function hitObject(p:Point,pointerType="mouse"){
+    const topFirst=[...nodes].reverse();
+    // Real artwork always wins over a nearby object's expanded edge.
+    return topFirst.find(n=>{const shape=nodeShape(n);return shape&&pointInShape(n,p,world,shape);})??topFirst.find(n=>{const shape=nodeShape(n);return !selectedIds.includes(n.id)&&shape&&pointInShape(n,p,world,shape,pointerEdgeTolerance(n.scale,cameraRef.current.zoom,pointerType));});
+  }
   function insideSelection(p:Point){
     if(!frame)return false;const local=rotatePoint({x:p.x-frame.center.x,y:p.y-frame.center.y},-frame.rotation);
     return Math.abs(local.x)<=frame.width/2+8/cameraRef.current.zoom&&Math.abs(local.y)<=frame.height/2+8/cameraRef.current.zoom;
@@ -127,10 +131,19 @@ export default function Canvas({board,locale,selectedIds,onSelect,onTransform,on
     el.addEventListener("wheel",wheel,{passive:false});return()=>el.removeEventListener("wheel",wheel);
   },[boardRef,objectDragging]);
   useEffect(()=>{
-    if(pickerOpen){stageRef.current?.scrollIntoView({block:"nearest",behavior:"instant"});stageRef.current?.querySelector<HTMLInputElement>(".pg-search input")?.focus({preventScroll:true});}
-    else if(wasPickerOpen.current)pickerButton.current?.focus({preventScroll:true});
+    if(pickerOpen){restorePickerFocus.current=true;stageRef.current?.scrollIntoView({block:"nearest",behavior:"instant"});stageRef.current?.querySelector<HTMLInputElement>(".pg-search input")?.focus({preventScroll:true});}
+    else if(wasPickerOpen.current&&restorePickerFocus.current)pickerButton.current?.focus({preventScroll:true});
     wasPickerOpen.current=pickerOpen;
   },[pickerOpen]);
+  useEffect(()=>{
+    if(!pickerOpen)return;
+    function outside(event:globalThis.PointerEvent){
+      const target=event.target as Node;
+      if(trayDragging||stageRef.current?.querySelector(".pg-floating-library")?.contains(target)||pickerButton.current?.contains(target))return;
+      restorePickerFocus.current=false;setPickerOpen(false);
+    }
+    document.addEventListener("pointerdown",outside,true);return()=>document.removeEventListener("pointerdown",outside,true);
+  },[pickerOpen,trayDragging,setPickerOpen]);
   useEffect(()=>{
     if(!fullscreen)return;
     const overflow=document.body.style.overflow;document.body.style.overflow="hidden";
@@ -171,7 +184,7 @@ export default function Canvas({board,locale,selectedIds,onSelect,onTransform,on
     <div className="pg-space-toolbar"><button ref={pickerButton} className="pg-picker-toggle" aria-label={t.openPicker} aria-expanded={pickerOpen} onClick={()=>setPickerOpen(!pickerOpen)}><Plus size={17}/><span>{t.addEmoji}</span></button><div className="pg-space-history">{toolbar}</div><div className="pg-view-tools"><button className="pg-selection-tool" aria-label={t.selectArea} title={t.selectAreaHint} aria-pressed={selectMode} onClick={()=>setSelectMode(!selectMode)}><MousePointer2 size={17}/><span>{t.selectArea}</span></button><button aria-label={t.zoomOut} title={t.zoomOut} disabled={camera.zoom<=MIN_ZOOM} onClick={()=>zoomButton(1/1.3)}><ZoomOut size={17}/></button><output aria-label={t.zoomLevel}>{Math.round(camera.zoom*100)}%</output><button aria-label={t.zoomIn} title={t.zoomIn} disabled={camera.zoom>=maxZoom(size.width,size.height)} onClick={()=>zoomButton(1.3)}><ZoomIn size={17}/></button><button aria-label={t.fit} title={t.fit} onClick={fit}><Scan size={17}/></button><button aria-label={fullscreen?t.exitFullscreen:t.fullscreen} title={fullscreen?t.exitFullscreen:t.fullscreen} onClick={()=>void toggleFullscreen()}>{fullscreen?<Minimize size={17}/>:<Expand size={17}/>}</button></div></div>
     <div ref={el=>{setNodeRef(el);boardRef.current=el;}} role="region" aria-label={t.canvas} tabIndex={0} data-shapes-ready={board.nodes.every(n=>shapes.has(n.glyph))} className={`pg-board ${dragReady?"drag-ready":""} ${isOver?"over":""} ${panning?"panning":""} ${selectMode?"select-mode":""} ${shiftPressed?"shift-select":""}`} onPointerEnter={e=>setShiftPressed(e.shiftKey)} onPointerLeave={()=>setDragReady(false)} onPointerDown={e=>{
       if(e.button!==0||!e.isPrimary||gesture.current)return;
-      const p=point({x:e.clientX,y:e.clientY}),node=hitObject(p);
+      const p=point({x:e.clientX,y:e.clientY}),node=hitObject(p,e.pointerType);
       if(node){startObject(e,node,"move");return;}
       if(!e.shiftKey&&insideSelection(p)){startObject(e,null,"move");return;}
       e.preventDefault();e.currentTarget.focus({preventScroll:true});e.currentTarget.setPointerCapture(e.pointerId);
@@ -180,7 +193,7 @@ export default function Canvas({board,locale,selectedIds,onSelect,onTransform,on
     }} onPointerMove={e=>{
       if(gesture.current){if(gesture.current.element===e.currentTarget)moveObject(e);return;}
       const g=pan.current;
-      if(g?.id!==e.pointerId){const p=point({x:e.clientX,y:e.clientY});setDragReady(!!hitObject(p)||!e.shiftKey&&insideSelection(p));return;}
+      if(g?.id!==e.pointerId){const p=point({x:e.clientX,y:e.clientY});setDragReady(!!hitObject(p,e.pointerType)||!e.shiftKey&&insideSelection(p));return;}
       const dx=e.clientX-g.start.x,dy=e.clientY-g.start.y;if(Math.hypot(dx,dy)>=6)g.moved=true;
       if(g.selecting){const a=localPoint(g.start),b=localPoint({x:e.clientX,y:e.clientY});setArea({left:Math.min(a.x,b.x),right:Math.max(a.x,b.x),top:Math.min(a.y,b.y),bottom:Math.max(a.y,b.y)});}
       else setCamera({...g.camera,x:g.camera.x+dx,y:g.camera.y+dy});

@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {createNode} from "@/features/playground/model";
 import {emojiById} from "@/lib/catalog";
-import {pointInShape,shapeFromAlpha,shapeIntersectsArea} from "@/features/playground/shapes";
+import {pointInShape,pointerEdgeTolerance,shapeFromAlpha,shapeIntersectsArea} from "@/features/playground/shapes";
 import {rotatePoint} from "@/features/playground/transforms";
 
 const world={width:1000,height:500};
@@ -32,5 +32,24 @@ describe("artwork shape hit testing",()=>{
     expect(shapeIntersectsArea(node,{left:380,right:387.98,top:246,bottom:254},world,shape,1/32)).toBe(true);
     expect(shapeIntersectsArea(node,{left:380,right:387.9,top:246,bottom:254},world,shape,1/32)).toBe(false);
     const barelyVisible=new Uint8Array([15,16,0,0]);expect(shapeFromAlpha(barelyVisible,2).rows).toEqual([[{left:1,right:2}],[]]);
+  });
+});
+
+describe("forgiving pointer edges",()=>{
+  it("bounds the allowance in screen pixels, with more room for touch",()=>{
+    expect(pointerEdgeTolerance(1,1,"mouse")).toBe(2.4);
+    expect(pointerEdgeTolerance(1,1,"touch")).toBe(4);
+    expect(pointerEdgeTolerance(1,.1,"mouse")*.1).toBe(2);
+    expect(pointerEdgeTolerance(12,10,"mouse")*10).toBe(6);
+    expect(pointerEdgeTolerance(12,10,"touch")*10).toBe(10);
+  });
+  it("expands only the outer silhouette, keeping enclosed holes and area selection precise",()=>{
+    expect(pointInShape(node,{x:386,y:250},world,shape)).toBe(false);
+    expect(pointInShape(node,{x:386,y:250},world,shape,2.4)).toBe(true);
+    expect(pointInShape(node,{x:385,y:250},world,shape,2.4)).toBe(false);
+    expect(pointInShape(node,{x:400,y:250},world,shape,10)).toBe(false);
+    expect(shapeIntersectsArea(node,{left:382,right:386,top:248,bottom:252},world,shape)).toBe(false);
+    const rotated={...node,rotation:45,scale:2},offset=rotatePoint({x:-27,y:0},45);
+    expect(pointInShape(rotated,{x:400+offset.x,y:250+offset.y},world,shape,4)).toBe(true);
   });
 });

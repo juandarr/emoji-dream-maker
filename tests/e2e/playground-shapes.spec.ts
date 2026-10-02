@@ -79,3 +79,25 @@ test("touch respects the unselected silhouette and the selected drag region",asy
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   }finally{await context.close();}
 });
+
+async function outerLeft(page:Page){
+  const offset=await page.locator('.pg-node[data-id="donut"] .pg-vector-glyph').evaluate(el=>{
+    const canvas=document.createElement("canvas");canvas.width=canvas.height=512;const ctx=canvas.getContext("2d")!;
+    ctx.font=`${512*1024/1275}px ${getComputedStyle(el).fontFamily}`;const m=ctx.measureText(el.textContent!);ctx.fillText(el.textContent!,(512-m.width)/2,256+(m.fontBoundingBoxAscent-m.fontBoundingBoxDescent)/2);
+    const pixels=ctx.getImageData(0,256,512,1).data;for(let x=0;x<512;x++)if(pixels[x*4+3]>=16)return x/512-.5;throw new Error("No painted edge");
+  });return at(await geometry(page),offset,0);
+}
+test("near-edge mouse grabs follow the silhouette at rotation and zoom without expanding area selection",async({page})=>{
+  await open(page,{...fixture,nodes:[{...fixture.nodes[0],emojiId:"2B55",glyph:"⭕",label:"Circle",scale:3},fixture.nodes[1]]});
+  const node=page.locator('.pg-node[data-id="donut"]');
+  for(const rotated of [false,true]){
+    if(rotated){await node.focus();await node.press("Enter");for(let i=0;i<3;i++)await page.getByRole("button",{name:"Rotate selection",exact:true}).press("Shift+ArrowRight");await page.keyboard.press("Escape");await page.getByRole("button",{name:"Zoom in",exact:true}).click();}
+    let edge=await outerLeft(page),g=await geometry(page),angle=g.angle*Math.PI/180;
+    const near={x:edge.x-2*Math.cos(angle),y:edge.y-2*Math.sin(angle)},before=await positions(page),camera=await page.locator(".pg-world").getAttribute("style");
+    await dragFrom(page,near);expect((await positions(page))[0]).not.toEqual(before[0]);await expect(page.locator(".pg-world")).toHaveAttribute("style",camera!);await expect(node).toHaveAttribute("aria-pressed","false");
+    edge=await outerLeft(page);const far={x:edge.x-16*Math.cos(angle),y:edge.y-16*Math.sin(angle)},moved=await positions(page);await dragFrom(page,far);expect(await positions(page)).toEqual(moved);await expect(page.locator(".pg-world")).not.toHaveAttribute("style",camera!);
+  }
+  // Marquee selection still requires contact with the real artwork, not the pointer allowance.
+  await node.focus();await node.press("Enter");for(let i=0;i<3;i++)await page.getByRole("button",{name:"Rotate selection",exact:true}).press("Shift+ArrowLeft");await page.keyboard.press("Escape");
+  const edge=await outerLeft(page);await page.getByRole("button",{name:"Select area",exact:true}).click();await area(page,{x:edge.x-15,y:edge.y-8},{x:edge.x-2,y:edge.y+8});await expect(node).toHaveAttribute("aria-pressed","false");
+});
