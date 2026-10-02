@@ -2,6 +2,8 @@
 
 import { useEffect, useId, useRef } from "react";
 import type { CSSProperties } from "react";
+import { GravityEcho } from "./GravityLens";
+import type { Gravity } from "./GravityLens";
 
 // Fixed lens geometry; only the light flows. Rotating the whole silhouette
 // would turn the edge-on accretion disk away from the viewer.
@@ -31,9 +33,14 @@ const diskStrands = Array.from({ length: 16 }, (_, i) => ({
   style: { "--flow-period": `${10 + i * .7}s`, "--flow-delay": `${-((i * 61 + 29) % 101) / 101 * (10 + i * .7)}s` } as CSSProperties,
 }));
 
-type BlackHoleProps = { proximity: number; reduced: boolean; paused: boolean };
+type BlackHoleProps = { gravity: Gravity; reduced: boolean; paused: boolean };
 
-export default function BlackHole({ proximity, reduced, paused }: BlackHoleProps) {
+export default function BlackHole({ gravity, reduced, paused }: BlackHoleProps) {
+  const { proximity, angle } = gravity;
+  const strain = reduced ? 0 : gravity.strength;
+  const heat = reduced ? 0 : gravity.heat;
+  const direction = angle * 180 / Math.PI;
+  const nx = Math.cos(angle), ny = Math.sin(angle);
   const id = useId().replaceAll(":", "");
   const svg = useRef<SVGSVGElement>(null);
   const speed = useRef(1);
@@ -47,9 +54,14 @@ export default function BlackHole({ proximity, reduced, paused }: BlackHoleProps
       element.style.setProperty("--accretion-energy", "0");
       return;
     }
-    if (paused) return;
     const animations = element.getAnimations({ subtree: true });
-    const target = 1 + proximity * 4.5;
+    if (paused) {
+      speed.current = 1;
+      for (const animation of animations) animation.updatePlaybackRate(1);
+      element.style.setProperty("--accretion-energy", "0");
+      return;
+    }
+    const target = 1 + proximity * 4.5 + heat * 1.5;
     let frame = 0;
     let previous = performance.now();
     const settle = (now: number) => {
@@ -65,10 +77,13 @@ export default function BlackHole({ proximity, reduced, paused }: BlackHoleProps
     };
     frame = requestAnimationFrame(settle);
     return () => cancelAnimationFrame(frame);
-  }, [proximity, reduced, paused]);
+  }, [proximity, heat, reduced, paused]);
 
   return <svg ref={svg} className="black-hole" viewBox="0 0 320 240" aria-hidden="true" focusable="false">
     <defs>
+      <filter id={`${id}-energy`} colorInterpolationFilters="sRGB" x="-30%" y="-40%" width="160%" height="180%">
+        <feColorMatrix className="black-hole-energy-map" type="matrix" values={`${1 - heat} 0 0 0 ${heat} 0 ${1 - heat} 0 0 ${heat} 0 0 ${1 - heat} 0 ${heat} 0 0 0 1 0`}/>
+      </filter>
       <radialGradient id={`${id}-halo`}>
         <stop offset=".25" stopColor="#ff922f" stopOpacity=".2"/>
         <stop offset=".6" stopColor="#c84b21" stopOpacity=".1"/>
@@ -89,15 +104,17 @@ export default function BlackHole({ proximity, reduced, paused }: BlackHoleProps
         <stop offset="1" stopColor="#d63f16"/>
       </linearGradient>
       <filter id={`${id}-glow`} x="-30%" y="-50%" width="160%" height="200%">
-        <feGaussianBlur stdDeviation="3.5"/>
+        <feGaussianBlur stdDeviation={3.5 + heat * 2}/>
       </filter>
       <filter id={`${id}-bloom`} x="-20%" y="-40%" width="140%" height="180%">
         <feGaussianBlur stdDeviation=".75"/>
       </filter>
       <clipPath id={`${id}-foreground`}><rect x="0" y="125" width="320" height="40"/></clipPath>
     </defs>
+    {strain > .001 && <g filter={heat > .001 ? ref("energy") : undefined}><GravityEcho field={gravity}/></g>}
+    <g className="black-hole-body" transform={`translate(${160 + nx * strain * 4} ${120 + ny * strain * 4}) rotate(${nx * strain * 6}) rotate(${direction}) scale(${1 + strain * .12} ${1 - strain * .055}) rotate(${-direction}) translate(-160 -120)`}>
     <ellipse className="black-hole-aura" cx="160" cy="121" rx="156" ry="109" fill={ref("halo")}/>
-    <g className="black-hole-emission" fill="none" strokeLinecap="round">
+    <g className="black-hole-emission" fill="none" strokeLinecap="round" filter={heat > .001 ? ref("energy") : undefined}>
       <g filter={ref("glow")} stroke={ref("heat")} strokeWidth="13" opacity=".6">
         <path d={strands[13].top}/><path d={strands[13].bottom}/>
         <ellipse cx="160" cy="125" rx="139" ry="13"/>
@@ -120,7 +137,7 @@ export default function BlackHole({ proximity, reduced, paused }: BlackHoleProps
     <circle cx="160" cy="120" r="50.5" fill="none" stroke="#fa9e42" strokeWidth=".7" opacity=".75"/>
     <circle cx="160" cy="120" r="52" fill="none" stroke="#ffad50" strokeWidth="1.4" opacity=".4" filter={ref("bloom")}/>
     <circle className="black-hole-flow black-hole-photon" cx="160" cy="120" r="50.8" fill="none" stroke="#ffe3ac" strokeWidth=".9" pathLength="1000" strokeDasharray="90 210 26 274 130 270" opacity=".65"/>
-    <g className="black-hole-emission" fill="none" clipPath={ref("foreground")}>
+    <g className="black-hole-emission" fill="none" clipPath={ref("foreground")} filter={heat > .001 ? ref("energy") : undefined}>
       <ellipse cx="160" cy="125" rx="144" ry="12.5" stroke={ref("heat")} strokeWidth="7" opacity=".65" filter={ref("glow")}/>
       {diskStrands.map((strand, i) => <g key={i} style={strand.style}>
         <ellipse cx="160" cy="125" rx={strand.rx} ry={strand.ry} stroke={ref("heat")} strokeWidth={i % 3 === 0 ? 1.5 : .8} opacity=".85"/>
@@ -128,5 +145,6 @@ export default function BlackHole({ proximity, reduced, paused }: BlackHoleProps
       </g>)}
     </g>
     <path d="M 13 125 Q 160 120 307 125" fill="none" stroke={ref("heat")} strokeWidth="1.6" filter={ref("bloom")}/>
+    </g>
   </svg>;
 }
