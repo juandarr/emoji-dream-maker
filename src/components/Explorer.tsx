@@ -5,10 +5,11 @@ import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, getClientRect, 
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { AnimatePresence } from "motion/react";
 import dynamic from "next/dynamic";
-import { ArrowRight, ChevronLeft, ChevronRight, Compass, Grid2X2, Heart, History, List, Moon, Orbit, Search, Shuffle, Trash2, X } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight, Compass, Grid2X2, Heart, History, List, Moon, Shapes, Orbit, Search, Shuffle, Trash2, X } from "lucide-react";
 import { catalog, defaultTopic, categories, constellationPositions, emojiById, searchCatalog } from "@/lib/catalog";
 import type { ConstellationPosition } from "@/lib/catalog";
 import { messages } from "@/lib/i18n";
+import { playgroundLabels } from "@/features/playground/labels";
 import { discoveryKey, initialPreferences, readPreferences, remember, savePreferences } from "@/lib/storage";
 import type { Preferences } from "@/lib/storage";
 import type { Discovery, EmojiRecord, Locale, TopicCandidate } from "@/lib/types";
@@ -16,6 +17,7 @@ import { loadVideos } from "@/lib/video-prefetch";
 import BlackHole from "./BlackHole";
 import { GravityEmoji, GravityField, useGravity } from "./GravityLens";
 const Gallery = dynamic(() => import("./Gallery"));
+const Playground = dynamic(() => import("@/features/playground/Playground"));
 
 function EmojiButton({emoji,locale,selected,onSelect,position,view}:{emoji:EmojiRecord;locale:Locale;selected:boolean;onSelect:()=>void;position:ConstellationPosition;view:Preferences["view"]}) {
   const {attributes,listeners,setNodeRef,isDragging}=useDraggable({id:emoji.id});
@@ -45,7 +47,9 @@ export default function Explorer() {
   const [debounced,setDebounced]=useState("");
   const [group,setGroup]=useState<number|null>(null);
   const [page,setPage]=useState(0);
-  const [tab,setTab]=useState<"discover"|"favorites"|"history">("discover");
+  const [tab,setTab]=useState<"discover"|"favorites"|"history"|"playground">("discover");
+  const [playgroundSeed,setPlaygroundSeed]=useState<{id:string;emoji:EmojiRecord;glyph:string}|null>(null);
+  const [playgroundOpened,setPlaygroundOpened]=useState(false);
   const [selected,setSelected]=useState<EmojiRecord|null>(null);
   const [variant,setVariant]=useState<string|null>(null);
   const [dragging,setDragging]=useState<string|null>(null);
@@ -64,11 +68,11 @@ export default function Explorer() {
   const visible=matches.slice(Math.min(page,pages-1)*48,(Math.min(page,pages-1)+1)*48);
   const positions=constellationPositions(visible);
   useEffect(()=>{
-    if(!selected)return;
+    if(!selected||tab!=="discover")return;
     const controller=new AbortController();
     void loadVideos(selected.id,defaultTopic(selected,locale),locale,controller.signal).catch(()=>{});
     return ()=>controller.abort();
-  },[selected,locale]);
+  },[selected,locale,tab]);
   const choose=(emoji:EmojiRecord)=>{void import("./Gallery");setSelected(emoji);setVariant(null);};
   const open=useCallback((emoji:EmojiRecord,glyph?:string,topic?:TopicCandidate)=>setGallery({emoji,glyph:glyph||emoji.glyph,topic,key:Date.now()}),[]);
   const close=useCallback(()=>setGallery(null),[]);
@@ -96,6 +100,7 @@ export default function Explorer() {
         <a className="brand" href="/" aria-label="Dream Maker"><span className="brand-icon"><img src="/icon.svg" width={40} height={40} alt=""/></span><span>dream<span className="brand-light">maker</span></span></a>
         <div className="sidebar-body"><nav aria-label={t.discover}>
           <button aria-current={tab==="discover"?"page":undefined} title={t.discover} className={`nav-discover ${tab==="discover"?"active":""}`} onClick={()=>setTab("discover")}><Compass size={19}/>{t.discover}<span className="nav-active-dot"/></button>
+          <button aria-current={tab==="playground"?"page":undefined} title={playgroundLabels[locale].name} className={`nav-playground ${tab==="playground"?"active":""}`} onClick={()=>{setPlaygroundOpened(true);setTab("playground");}}><Shapes size={19}/>{playgroundLabels[locale].name}<span className="nav-active-dot"/></button>
           <button aria-current={tab==="favorites"?"page":undefined} title={t.favorites} className={`nav-favorites ${tab==="favorites"?"active":""}`} onClick={()=>setTab("favorites")}><Heart size={19}/>{t.favorites}<span className="nav-count">{prefs.favorites.length}</span></button>
           <button aria-current={tab==="history"?"page":undefined} title={t.history} className={`nav-history ${tab==="history"?"active":""}`} onClick={()=>setTab("history")}><History size={19}/>{t.history}<span className="nav-count">{prefs.history.length}</span></button>
         </nav>
@@ -103,9 +108,10 @@ export default function Explorer() {
         <div className="preferences"><label className="language-picker"><span>{t.locale}</span><select aria-label={t.locale} value={locale} onChange={e=>setPrefs(p=>({...p,locale:e.target.value as Locale}))}><option value="en">English</option><option value="es">Español</option></select></label><button className="motion-toggle" aria-pressed={reduced} onClick={()=>setPrefs(p=>({...p,reduced:!p.reduced}))}><Moon size={14}/>{t.reduced}<span className={`toggle ${reduced?"on":""}`}/></button><p><span className="privacy-dot"/>{t.local}</p></div>
       </aside>
       <main className={`main-content section-${tab}`}>
-        <section className="intro"><h1>{tab==="discover"?t.title:tab==="favorites"?t.saved:t.recent}</h1><p>{tab==="discover"?t.intro:tab==="favorites"?t.savedIntro:t.historyIntro}</p></section>
+        <section className="intro"><h1>{tab==="discover"?t.title:tab==="playground"?playgroundLabels[locale].title:tab==="favorites"?t.saved:t.recent}</h1><p>{tab==="discover"?t.intro:tab==="playground"?playgroundLabels[locale].intro:tab==="favorites"?t.savedIntro:t.historyIntro}</p></section>
         {(storageFailed||notice)&&<div role="status" className="storage-notice">{notice||t.storage}{notice&&<button onClick={()=>setNotice("")} aria-label={t.close}><X size={14}/></button>}</div>}
-        {tab==="discover"?<>
+        {playgroundOpened&&<div hidden={tab!=="playground"}><Playground locale={locale} seed={playgroundSeed}/></div>}
+        {tab==="playground"?null:tab==="discover"?<>
           <div className="search-row"><label className="search-box"><Search size={21}/><input aria-label={t.search} placeholder={t.search} value={query} onChange={e=>setQuery(e.target.value)} maxLength={150}/>{query?<button onClick={()=>setQuery("")} aria-label={t.clearSearch}><X size={16}/></button>:<span className="search-mark">✧</span>}</label><button className="surprise-button" onClick={surprise} aria-label={t.surprise}><Shuffle size={16}/><span>{t.surprise}</span></button></div>
           <div className="category-strip" aria-label={t.all}><button aria-pressed={group===null} className={group===null?"active":""} onClick={()=>{setGroup(null);setPage(0);}}>{t.all}</button>{categories.map(c=><button aria-pressed={group===c.id} className={group===c.id?"active":""} key={c.id} onClick={()=>{setGroup(c.id);setPage(0);}}><span>{c.icon}</span>{c[locale]}</button>)}</div>
           <div className="explorer-workspace"><div className="canvas-column"><div className="canvas-toolbar"><span><span className="count-dot"/>{matches.length.toLocaleString(locale)} {t.matches}</span><div className="view-switch" aria-label={t.view}>{([{value:"constellation",Icon:Orbit,label:t.constellation},{value:"grid",Icon:Grid2X2,label:t.grid},{value:"list",Icon:List,label:t.list}] as const).map(({value,Icon,label})=><button key={value} aria-label={label} title={label} aria-pressed={prefs.view===value} className={prefs.view===value?"active":""} onClick={()=>setPrefs(p=>({...p,view:value}))}><Icon size={16}/></button>)}</div></div>
@@ -124,7 +130,7 @@ export default function Explorer() {
           <div className="pagination"><span>{t.page} {Math.min(page,pages-1)+1} / {pages}</span><div><button disabled={page<=0} onClick={()=>setPage(p=>p-1)} aria-label={t.previous}><ChevronLeft size={17}/></button><button disabled={page>=pages-1} onClick={()=>setPage(p=>p+1)} aria-label={t.next}><ChevronRight size={17}/></button></div></div></div>
           <aside className="discovery-rail"><div className={`selection-card ${selected?"has-selection":""}`}>{selected&&<p className="eyebrow">{t.selected}</p>}<div className={`selection-art ${selected?"has-selection":""}`}><span className="selection-ring"/><span>{selectedGlyph||"✧"}</span><i>✦</i><i>·</i></div><h2>{selected?selected.labels[locale]:t.select}</h2>{!selected&&<p>{t.pickHint}</p>}{selected?.association&&<p className="association-note">{selected.association[locale]}</p>}
           {!!selected?.variants.length&&<label className="variant-picker">{t.variants}<select aria-label={t.variants} value={variant||selected.glyph} onChange={e=>setVariant(e.target.value)}><option value={selected.glyph}>{selected.glyph} {selected.labels[locale]}</option>{selected.variants.map(v=><option key={v.id} value={v.glyph}>{v.glyph} {v.labels[locale]}</option>)}</select></label>}
-          <button className="primary-button open-button" disabled={!selected} onClick={()=>selected&&open(selected,selectedGlyph)}>{t.open}<ArrowRight size={17}/></button></div>
+          <button className="primary-button open-button" disabled={!selected} onClick={()=>selected&&open(selected,selectedGlyph)}>{t.open}<ArrowRight size={17}/></button><button className="pg-add-from-discover" disabled={!selected} onClick={()=>{if(selected){setPlaygroundSeed({id:crypto.randomUUID(),emoji:selected,glyph:selectedGlyph||selected.glyph});setPlaygroundOpened(true);setTab("playground");}}}><Shapes size={15}/>{playgroundLabels[locale].start}</button></div>
           <div className="curiosity-card"><p className="eyebrow">{t.try}</p>{t.tips.map((word,i)=><button key={word} onClick={()=>{setQuery(word);setGroup(null);}}><span>{["🌊","🎵","❤️","🪐"][i]}</span>{word}<ArrowUpRightIcon/></button>)}</div>
           </aside></div>
         </>:<section className="saved-section"><div className="saved-toolbar"><span>{saved.length} {t.count}</span><button disabled={!saved.length} onClick={()=>setPrefs(p=>({...p,[tab]:[]}))}><Trash2 size={14}/>{t.clear}</button></div>{saved.length?<div className="saved-grid">{saved.map(item=>{const emoji=emojiById.get(item.emojiId)!;return <button className="saved-card" key={discoveryKey(item)} onClick={()=>{choose(emoji);open(emoji,emoji.glyph,item.topic);}}><span>{emoji.glyph}</span><h2>{item.topic.label}</h2>{item.topic.label.toLocaleLowerCase(locale)!==emoji.labels[locale].toLocaleLowerCase(locale)&&<p>{emoji.labels[locale]}</p>}<ArrowRight size={17}/></button>;})}</div>:<div className="saved-empty">{tab==="favorites"?<Heart size={48} strokeWidth={1.2}/>:<History size={48} strokeWidth={1.2}/>}<h2>{tab==="favorites"?t.savedEmpty:t.historyEmpty}</h2><button className="primary-button" onClick={()=>setTab("discover")}>{t.back}<ArrowRight size={16}/></button></div>}</section>}
