@@ -305,7 +305,6 @@
 .pg-world .pg-node.selected>span {filter:drop-shadow(0 0 4px #ab7aed) drop-shadow(0 6px 5px #7651a355);animation:pg-object-float 3s ease-in-out infinite}
 .pg-world .pg-node.dragging>span {filter:drop-shadow(0 9px 5px #45364e55);animation:none}
 .pg-stage.object-dragging,.pg-stage.object-dragging * {cursor:grabbing!important}
-.pg-world .pg-node:focus-visible:not(.selected)>span {outline:1px dashed #a786cb;outline-offset:5px;border-radius:50%}
 @keyframes pg-object-float {0%,100%{translate:0 0}50%{translate:0 -3px}}
 .pg-object-delete {position:absolute;z-index:4;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#473355;color:#fff;transform:translate(-50%,-50%);box-shadow:0 3px 10px #402b4b33;cursor:pointer;touch-action:manipulation}
 .pg-object-delete:hover {background:#96526b}

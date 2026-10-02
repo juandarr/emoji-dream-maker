@@ -105,6 +105,11 @@ test("object clicks toggle selection; dragging stays unselected and deletes undo
   await expect(node.locator(":scope > span")).toHaveCSS("animation-name","pg-object-float");
   await node.click();await expect(node).toHaveAttribute("aria-pressed","false");
   await node.click();await page.keyboard.press("Escape");await expect(node).toHaveAttribute("aria-pressed","false");
+  await node.click();await page.locator(".pg-board").click({position:{x:15,y:15}});await expect(node).toHaveAttribute("aria-pressed","false");await expect(page.getByRole("button",{name:"Delete selected object"})).toHaveCount(0);
+  // Keyboard focus remains functional without the dashed oval or button outline.
+  await page.keyboard.press("Tab");await node.focus();expect(await node.evaluate(el=>el.matches(":focus-visible"))).toBe(true);
+  await expect(node).toHaveCSS("outline-style","none");await expect(node.locator(":scope > span")).toHaveCSS("outline-style","none");
+  await page.keyboard.press("Enter");await expect(node).toHaveAttribute("aria-pressed","true");await page.keyboard.press("Space");await expect(node).toHaveAttribute("aria-pressed","false");
   const before=await node.getAttribute("style"),box=await node.boundingBox();
   await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);await page.mouse.down();await page.mouse.move(box!.x+box!.width/2+100,box!.y+box!.height/2+80,{steps:8});
   await expect(node).toHaveClass(/dragging/);await expect(node.locator(":scope > span")).toHaveCSS("animation-name","none");await expect(node).toHaveAttribute("aria-pressed","false");await expect(page.locator(".pg-drag-glyph")).toHaveCount(0);
@@ -116,12 +121,13 @@ test("object clicks toggle selection; dragging stays unselected and deletes undo
 });
 
 test("wheel zoom anchors under the cursor, pans freely, and never scrolls the page",async({page})=>{
-  await open(page);await add(page,"octopus","octopus");const node=page.locator(".pg-node"),canvas=page.locator(".pg-board");await page.keyboard.press("Escape");await canvas.scrollIntoViewIfNeeded();
+  await page.emulateMedia({reducedMotion:"reduce"});await open(page);await add(page,"octopus","octopus");const node=page.locator(".pg-node"),canvas=page.locator(".pg-board");await page.keyboard.press("Escape");await canvas.scrollIntoViewIfNeeded();
   const before=await node.boundingBox(),center={x:before!.x+before!.width/2,y:before!.y+before!.height/2};
   const scroll=await page.evaluate(()=>scrollY);await page.mouse.move(center.x,center.y);await page.mouse.wheel(0,-400);await expect(page.getByLabel("Canvas zoom")).not.toHaveText("100%");
   const after=await node.boundingBox();expect(after!.width).toBeGreaterThan(before!.width*2);expect(Math.abs(after!.x+after!.width/2-center.x)).toBeLessThan(2);expect(Math.abs(after!.y+after!.height/2-center.y)).toBeLessThan(2);expect(await page.evaluate(()=>scrollY)).toBe(scroll);
   const rect=await canvas.boundingBox();const start={x:rect!.x+rect!.width-40,y:rect!.y+rect!.height-50};
-  await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(start.x-130,start.y-90,{steps:8});await page.mouse.up();
+  await node.click();await expect(node).toHaveAttribute("aria-pressed","true");
+  await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(start.x-130,start.y-90,{steps:8});await page.mouse.up();await expect(node).toHaveAttribute("aria-pressed","true");
   const panned=await node.boundingBox();expect(panned!.x-after!.x).toBeCloseTo(-130,0);expect(panned!.y-after!.y).toBeCloseTo(-90,0);
   await page.mouse.move(start.x-130,start.y-90);await page.mouse.down();await page.mouse.move(start.x,start.y,{steps:8});await page.mouse.up();
   const restored=await node.boundingBox();expect(restored!.x).toBeCloseTo(after!.x,0);expect(restored!.y).toBeCloseTo(after!.y,0);
