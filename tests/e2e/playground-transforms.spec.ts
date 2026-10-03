@@ -9,12 +9,14 @@ async function open(page:Page){
   await page.goto("/");await page.getByRole("button",{name:"Playground",exact:true}).click();
   await page.locator('input[type="file"]').setInputFiles({name:"legacy.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(fixture))});
   await expect(page.locator(".pg-node")).toHaveCount(3);await page.emulateMedia({reducedMotion:"reduce"});
+  // The authoring panels are now above the canvas; pointer coordinates need a visible stage.
+  await page.locator(".pg-stage").scrollIntoViewIfNeeded();
 }
 const values=(page:Page)=>page.locator(".pg-node").evaluateAll(els=>els.map(el=>({x:parseFloat((el as HTMLElement).style.left),y:parseFloat((el as HTMLElement).style.top),scale:Number((el as HTMLElement).dataset.scale),rotation:Number((el as HTMLElement).dataset.rotation)})));
 async function drag(page:Page,target:Locator,dx:number,dy:number){const b=await target.boundingBox();await page.mouse.move(b!.x+b!.width/2,b!.y+b!.height/2);await page.mouse.down();await page.mouse.move(b!.x+b!.width/2+dx,b!.y+b!.height/2+dy,{steps:12});await page.mouse.up();}
 async function selectPair(page:Page){
-  const nodes=page.locator(".pg-node"),a=await nodes.nth(0).boundingBox(),b=await nodes.nth(1).boundingBox();
   await page.getByRole("button",{name:"Select area",exact:true}).click();
+  const nodes=page.locator(".pg-node"),a=await nodes.nth(0).boundingBox(),b=await nodes.nth(1).boundingBox();
   await page.mouse.move(Math.min(a!.x,b!.x)-20,Math.min(a!.y,b!.y)-20);await page.mouse.down();
   await page.mouse.move(Math.max(a!.x+a!.width,b!.x+b!.width)+20,Math.max(a!.y+a!.height,b!.y+b!.height)+20,{steps:12});await expect(page.locator(".pg-selection-area")).toBeVisible();await page.mouse.up();
   await expect(nodes.nth(0)).toHaveAttribute("aria-pressed","true");await expect(nodes.nth(1)).toHaveAttribute("aria-pressed","true");await expect(nodes.nth(2)).toHaveAttribute("aria-pressed","false");
@@ -40,7 +42,7 @@ test("area-selected groups move, resize, rotate, persist and delete in single un
   await page.getByRole("button",{name:"Redo",exact:true}).click();expect(await values(page)).toEqual(rotated);
   await page.locator(".pg-object-delete").click();await expect(page.locator(".pg-node")).toHaveCount(1);await expect(page.locator(".pg-relationships")).toHaveCount(0);
   await page.getByRole("button",{name:"Undo",exact:true}).click();expect(await values(page)).toEqual(rotated);await expect(page.locator(".pg-relationships")).toContainText("friends");
-  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();expect(await values(page)).toEqual(rotated);
+  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect.poll(()=>values(page)).toEqual(rotated);
   await page.locator(".pg-node").nth(0).click();await page.locator(".pg-node").nth(1).click({modifiers:["Shift"]});await page.keyboard.press("Delete");await expect(page.locator(".pg-node")).toHaveCount(1);
 });
 
