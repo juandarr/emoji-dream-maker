@@ -107,3 +107,14 @@ it("rejects incomplete structured output instead of exposing broken JSON as a cr
   vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({choices:[{message:{content:'{"title":"A lost tale","text":'}}]})));
   await expect(openRouterGenerator.generate(board,settings)).rejects.toThrow("incomplete creation");
 });
+
+
+it("sends spatial story cues while preserving authored context as the priority",async()=>{
+  const fetch=vi.fn().mockResolvedValue(Response.json({choices:[{message:{content:'{"title":"A woodland snack","text":"The bear pauses beside a tiny mushroom."}'}}]}));vi.stubGlobal("fetch",fetch);
+  const scene={...emptyComposition(),intent:"An imaginary woodland adventure",interpretation:"The bear is protecting the mushroom, not eating it.",nodes:[{...board.nodes[0],id:"bear",glyph:"🐻",meaning:"A gentle guardian",x:50,y:50,scale:2,rotation:20},{...board.nodes[0],id:"mushroom",glyph:"🍄",meaning:"A tiny friend",x:51,y:54,scale:.4,rotation:0}]};
+  await openRouterGenerator.generate(scene,{...settings,kind:"story"});
+  const messages=JSON.parse(fetch.mock.calls[0][1].body).messages,brief=JSON.parse(messages[1].content).brief;
+  expect(brief.layout).toContainEqual({id:"mushroom",xPercent:51,yPercent:54,sizeMultiplier:.4,clockwiseRotationDegrees:0});expect(brief.layout).toContainEqual({id:"bear",xPercent:50,yPercent:50,sizeMultiplier:2,clockwiseRotationDegrees:20});
+  expect(brief.interpretation).toBe(scene.interpretation);expect(brief.intent).toBe(scene.intent);
+  expect(messages[0].content).toContain("proximity, size and rotation");expect(messages[0].content).toContain("take precedence over spatial guesses");expect(messages[0].content).toContain("musical notes near an instrument");expect(messages[0].content).toContain("not mandatory rules or verified actions");
+});

@@ -17,7 +17,7 @@ test("header defaults, context expansion and relationships follow the requested 
   await expect(page.getByLabel("Make a",{exact:true}).locator("option")).toHaveText(["Interpretation","Short message","Poem","Short story","Song lyrics","Image prompt","Video storyboard"]);
   await expect(page.getByLabel("Output language",{exact:true})).toHaveCount(0);await expect(page.getByLabel("Tone",{exact:true})).toHaveCount(0);
   await expect(page.locator("#pg-context")).toBeHidden();await expect(page.locator("#pg-symbol-editor")).toBeHidden();await expect(page.locator("#pg-generation-settings")).toBeHidden();
-  await expect(page.locator(".pg-create-column")).toHaveText("Generate");await centered(page);
+  await expect(page.locator(".pg-generate")).toHaveText("Generate");await centered(page);
   expect((await page.locator(".pg-creation-header").boundingBox())!.height).toBeLessThan(235);
   await page.getByRole("button",{name:"Add context",exact:true}).click();
   const meaning=page.locator(".pg-meaning"),main=page.locator(".pg-header-main");

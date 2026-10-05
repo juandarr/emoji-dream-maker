@@ -55,7 +55,7 @@ test("single-object handles work with keyboard and cancel pointer transforms on 
   expect((await values(page))[0].scale).toBeGreaterThan(1);await page.keyboard.press("Escape");await page.mouse.up();expect(await values(page)).toEqual(before);await expect(node).toHaveAttribute("aria-pressed","false");
   await node.click();await drag(page,resize,30,30);expect((await values(page))[0].scale).toBeGreaterThan(1);
   await page.locator(".pg-board-menu summary").click();const download=page.waitForEvent("download");await page.getByRole("button",{name:"Export board",exact:true}).click();const exported=await download;await exported.saveAs("/tmp/playground-transforms.json");
-  await page.getByRole("button",{name:"Clear board",exact:true}).click();await page.locator('input[type="file"]').setInputFiles("/tmp/playground-transforms.json");expect((await values(page))[0].scale).toBeGreaterThan(1);
+  await page.getByRole("button",{name:"Reset canvas",exact:true}).click();await page.locator('input[type="file"]').setInputFiles("/tmp/playground-transforms.json");expect((await values(page))[0].scale).toBeGreaterThan(1);
 });
 
 test("area selection maps through a zoomed and panned camera",async({page})=>{

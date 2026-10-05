@@ -1,17 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { BookOpen, Copy, Expand, Feather, Pencil, X } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronUp, Copy, Expand, Feather, Pencil, Trash2, X } from "lucide-react";
 import { creationTitle, type GenerationRun, type OutputKind, type ReasoningEffort } from "@/features/generation/model";
 import type { Locale } from "@/lib/types";
 import { playgroundLabels } from "./labels";
 import EmojiArtwork from "./emoji-artwork";
 import type { BoardNode } from "./model";
+import { SAVED_RUN_LIMIT } from "./storage";
 import { storyBody, storyHeading } from "./story-fonts";
 
 export const storyLabels = {
-  en: { chapter: "THE STORY SO FAR", history: "Your story shelf", historyHint: "Little worlds worth returning to. Your last 10 creations, saved here.", emptyHistory: "Your first creation will find a home here.", blank: "Every story begins with a little wonder.", blankHint: "Arrange your symbols, give them meaning, and let your imagination turn the page.", output: "The next chapter", read: "Open reading view", close: "Close reading view", done: "Done editing", details: "Creation details", open: "Read creation", waiting: "A new world is taking shape…", failed: "An unfinished chapter", untitled: "Untitled creation" },
-  es: { chapter: "LA HISTORIA HASTA AQUÍ", history: "Tu biblioteca de historias", historyHint: "Pequeños mundos para volver a visitar. Tus últimas 10 creaciones, guardadas aquí.", emptyHistory: "Tu primera creación encontrará su lugar aquí.", blank: "Toda historia empieza con un poco de asombro.", blankHint: "Organiza tus símbolos, dales significado y deja que tu imaginación pase la página.", output: "El próximo capítulo", read: "Abrir vista de lectura", close: "Cerrar vista de lectura", done: "Terminar de editar", details: "Detalles de la creación", open: "Leer creación", waiting: "Un nuevo mundo está tomando forma…", failed: "Un capítulo por terminar", untitled: "Creación sin título" },
+  en: { chapter: "THE STORY SO FAR", history: "Your story shelf", historyHint: "Little worlds worth returning to. Your last 20 creations, saved here.", emptyHistory: "Your first creation will find a home here.", blank: "Every story begins with a little wonder.", blankHint: "Arrange your symbols, give them meaning, and let your imagination turn the page.", output: "The next chapter", read: "Open reading view", close: "Close reading view", done: "Done editing", details: "Creation details", open: "Read creation", waiting: "A new world is taking shape…", failed: "An unfinished chapter", untitled: "Untitled creation" },
+  es: { chapter: "LA HISTORIA HASTA AQUÍ", history: "Tu biblioteca de historias", historyHint: "Pequeños mundos para volver a visitar. Tus últimas 20 creaciones, guardadas aquí.", emptyHistory: "Tu primera creación encontrará su lugar aquí.", blank: "Toda historia empieza con un poco de asombro.", blankHint: "Organiza tus símbolos, dales significado y deja que tu imaginación pase la página.", output: "El próximo capítulo", read: "Abrir vista de lectura", close: "Cerrar vista de lectura", done: "Terminar de editar", details: "Detalles de la creación", open: "Leer creación", waiting: "Un nuevo mundo está tomando forma…", failed: "Un capítulo por terminar", untitled: "Creación sin título" },
 };
 
 function Ornament({ className }: { className: string }) {
@@ -61,9 +62,30 @@ export function StoryContent({ run, locale, outputName, stale, onEdit, onCopy }:
   </>;
 }
 
-export function StoryShelf({ runs, locale, outputNames, onOpen }: { runs: GenerationRun[]; locale: Locale; outputNames: Record<OutputKind, string>; onOpen: (id: string) => void }) {
+export function StoryShelf({ runs, locale, outputNames, onOpen, onDelete, onUndo, deletedTitle }: { runs: GenerationRun[]; locale: Locale; outputNames: Record<OutputKind, string>; onOpen: (id: string) => void; onDelete:(id:string)=>void; onUndo:()=>void; deletedTitle?:string }) {
   const s = storyLabels[locale], t = playgroundLabels[locale];
-  return <section className="pg-results" aria-label={s.history}><div className="pg-shelf-heading"><h2><BookOpen size={17}/>{s.history}</h2><span>{runs.length} / 10</span></div><p className="pg-hint">{s.historyHint}</p>{runs.length ? <div className="pg-result-list">{runs.map(run => <button className="pg-history-card" key={run.id} onClick={() => onOpen(run.id)} aria-label={`${s.open}: ${creationTitle(run) || outputNames[run.settings.kind]}`}><span className="pg-history-meta">{outputNames[run.settings.kind]}<span>{new Date(run.createdAt).toLocaleDateString(locale, { month: "short", day: "numeric" })}</span></span><span className="pg-history-title">{creationTitle(run) || outputNames[run.settings.kind]}</span><span className="pg-history-excerpt">{run.result?.text || (run.status === "running" ? t.generating : run.error || t.unknown)}</span><span className="pg-history-footer"><span aria-hidden="true">{run.board.nodes.slice(0, 5).map(n => n.glyph).join(" ")}</span><span>{s.open} <span aria-hidden="true">↗</span></span></span></button>)}</div> : <div className="pg-shelf-empty"><Feather size={20}/><p>{s.emptyHistory}</p></div>}</section>;
+  const h=locale==="es"?{remove:"Eliminar creación",all:"Mostrar todas",fewer:"Mostrar menos",deleted:"Creación eliminada",undo:"Deshacer"}:{remove:"Delete creation",all:"Show all",fewer:"Show fewer",deleted:"Creation deleted",undo:"Undo"};
+  const [expanded,setExpanded]=useState(false);
+  const shelfRef=useRef<HTMLElement>(null),deletedIndex=useRef<number|null>(null);
+  const visible=expanded?runs:runs.slice(0,5);
+  useEffect(()=>{
+    if(deletedIndex.current===null)return;
+    const controls=shelfRef.current?.querySelectorAll<HTMLButtonElement>(".pg-history-delete");
+    const next=controls?.[Math.min(deletedIndex.current,controls.length-1)]??shelfRef.current?.querySelector<HTMLButtonElement>(".pg-history-undo");
+    next?.focus({preventScroll:true});deletedIndex.current=null;
+  },[runs]);
+  return <section ref={shelfRef} className="pg-results" aria-label={s.history}>
+    <div className="pg-shelf-heading"><h2><BookOpen size={17}/>{s.history}</h2><span>{runs.length} / {SAVED_RUN_LIMIT}</span></div><p className="pg-hint">{s.historyHint}</p>
+    {runs.length ? <div id="pg-history-gallery" className="pg-result-list">{visible.map((run,index) => {
+      const title=creationTitle(run)||outputNames[run.settings.kind];
+      return <article className="pg-history-card" key={run.id}>
+        <div className="pg-history-meta"><span>{outputNames[run.settings.kind]}</span><span className="pg-history-meta-actions"><time dateTime={new Date(run.createdAt).toISOString()}>{new Date(run.createdAt).toLocaleDateString(locale,{month:"short",day:"numeric"})}</time><button className="pg-history-delete" aria-label={`${h.remove}: ${title}`} title={h.remove} onClick={()=>{deletedIndex.current=index;onDelete(run.id);}}><Trash2 size={14}/></button></span></div>
+        <button className="pg-history-read" onClick={()=>onOpen(run.id)} aria-label={`${s.open}: ${title}`}><span className="pg-history-title">{title}</span><span className="pg-history-excerpt">{run.result?.text || (run.status === "running" ? t.generating : run.error || t.unknown)}</span><span className="pg-history-footer"><span aria-hidden="true">{run.board.nodes.slice(0,5).map(n=>n.glyph).join(" ")}</span><span>{s.open} <span aria-hidden="true">↗</span></span></span></button>
+      </article>;
+    })}</div> : <div className="pg-shelf-empty"><Feather size={20}/><p>{s.emptyHistory}</p></div>}
+    {runs.length>5&&<div className="pg-history-expansion"><button aria-expanded={expanded} aria-controls="pg-history-gallery" onClick={()=>setExpanded(!expanded)}>{expanded?h.fewer:`${h.all} (${runs.length})`}{expanded?<ChevronUp size={14}/>:<ChevronDown size={14}/>}</button></div>}
+    {deletedTitle&&<div className="pg-history-notice" role="status"><span>{h.deleted}<span className="pg-deleted-title"> · {deletedTitle}</span></span><button className="pg-history-undo" onClick={onUndo}>{h.undo}</button></div>}
+  </section>;
 }
 
 export function StoryModal({ title, locale, onClose, children }: { title: string; locale: Locale; onClose: () => void; children: ReactNode }) {

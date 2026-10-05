@@ -15,9 +15,9 @@ import {emojiShape} from "./emoji-shape";
 import {pointInShape,pointerEdgeTolerance,shapeIntersectsArea,type GlyphShape} from "./shapes";
 
 export type CanvasGeometry={camera:Camera;width:number;height:number};
-type Props={board:Composition;locale:Locale;selectedIds:string[];onSelect:(ids:string[])=>void;onTransform:(nodes:BoardNode[])=>void;onRemove:(ids:string[])=>void;onAdd:()=>void;picker:ReactNode;overlay:ReactNode;toolbar:ReactNode;boardRef:React.RefObject<HTMLDivElement|null>;geometryRef:React.RefObject<CanvasGeometry>;pickerOpen:boolean;trayDragging:boolean;setPickerOpen:(value:boolean)=>void};
+type Props={resetVersion:number;board:Composition;locale:Locale;selectedIds:string[];onSelect:(ids:string[])=>void;onTransform:(nodes:BoardNode[])=>void;onRemove:(ids:string[])=>void;onAdd:()=>void;picker:ReactNode;overlay:ReactNode;toolbar:ReactNode;boardRef:React.RefObject<HTMLDivElement|null>;geometryRef:React.RefObject<CanvasGeometry>;pickerOpen:boolean;trayDragging:boolean;setPickerOpen:(value:boolean)=>void};
 type ObjectGesture={id:number;kind:"move"|"resize"|"rotate";start:Point;nodes:BoardNode[];preview:BoardNode[];center:Point;moved:boolean;keepSelection:boolean;lastAngle:number;angle:number;element:HTMLElement;clickId:string|null;additive:boolean;frame:SelectionFrame};
-export default function Canvas({board,locale,selectedIds,onSelect,onTransform,onRemove,onAdd,picker,overlay,toolbar,boardRef,geometryRef,pickerOpen,trayDragging,setPickerOpen}:Props) {
+export default function Canvas({resetVersion,board,locale,selectedIds,onSelect,onTransform,onRemove,onAdd,picker,overlay,toolbar,boardRef,geometryRef,pickerOpen,trayDragging,setPickerOpen}:Props) {
   const t=playgroundLabels[locale];
   const stageRef=useRef<HTMLDivElement|null>(null),pickerButton=useRef<HTMLButtonElement|null>(null),wasPickerOpen=useRef(false),restorePickerFocus=useRef(true);
   const {setNodeRef,isOver}=useDroppable({id:"composition-board"});
@@ -93,6 +93,13 @@ export default function Canvas({board,locale,selectedIds,onSelect,onTransform,on
     setPreview(null);setObjectDragging(false);
     if(g.element.hasPointerCapture(g.id))g.element.releasePointerCapture(g.id);
   }
+  useEffect(()=>{
+    if(!resetVersion)return;
+    const g=gesture.current;gesture.current=null;
+    if(g?.element.hasPointerCapture(g.id))g.element.releasePointerCapture(g.id);
+    pan.current=null;setPreview(null);setObjectDragging(false);setArea(null);setSelectMode(false);setPanning(false);setShiftPressed(false);
+    setCamera({x:0,y:0,zoom:1});
+  },[resetVersion]);
   function keyTransform(kind:"resize"|"rotate",e:React.KeyboardEvent<HTMLButtonElement>) {
     if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key))return;
     e.preventDefault();const frame=selectionFrame(selected,world);if(!frame)return;

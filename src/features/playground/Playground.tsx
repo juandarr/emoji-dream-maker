@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor, useDraggable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { BookOpen, ChevronLeft, ChevronRight, Copy, Feather, Plus, Redo2, Search, Trash2, Undo2, X } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, Copy, Feather, Plus, Redo2, RotateCcw, Search, Trash2, Undo2, X } from "lucide-react";
 import { categories, emojiById, searchCatalog } from "@/lib/catalog";
 import type { EmojiRecord, Locale } from "@/lib/types";
 import { boardReducer, clamp, compileBrief, createNode, emptyComposition, NODE_LIMIT, parseComposition, semanticIdentity, type BoardNode } from "./model";
-import { loadWorkspace, saveWorkspace, type Workspace } from "./storage";
+import { loadWorkspace, saveWorkspace, SAVED_RUN_LIMIT, type Workspace } from "./storage";
 import { playgroundLabels } from "./labels";
 import EmojiArtwork from "./emoji-artwork";
 import Canvas, {type CanvasGeometry} from "./Canvas";
@@ -36,6 +36,8 @@ function download(value:unknown,name:string) {
 export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null}) {
   const t=playgroundLabels[locale], s=storyLabels[locale];
   const [readingId,setReadingId]=useState<string|null>(null);
+  const [activeRunId,setActiveRunId]=useState<string|null>(null),[resetVersion,setResetVersion]=useState(0);
+  const [deletedRun,setDeletedRun]=useState<{run:GenerationRun;wasActive:boolean}|null>(null);
   const [history,dispatch]=useReducer(boardReducer,{past:[],present:emptyComposition(),future:[]});
   const board=history.present;
   const [ready,setReady]=useState(false),[readFailed,setReadFailed]=useState(false),[saveStatus,setSaveStatus]=useState<"saved"|"saving"|"failed">("saved");
@@ -56,8 +58,8 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
     void save.then(()=>{if(version===saveVersion.current)setSaveStatus("saved");},()=>{if(version===saveVersion.current)setSaveStatus("failed");});
     return save;
   },[]);
-  useEffect(()=>{let alive=true;void loadWorkspace().then(saved=>{if(alive&&saved){dispatch({type:"load",board:saved.board});setRuns(saved.runs);}},()=>{if(alive)setReadFailed(true);}).finally(()=>{if(alive)setReady(true);});return()=>{alive=false;};},[]);
-  useEffect(()=>{if(ready&&!readFailed)void persist({board,runs}).catch(()=>{});},[ready,readFailed,board,runs,persist]);
+  useEffect(()=>{let alive=true;void loadWorkspace().then(saved=>{if(alive&&saved){dispatch({type:"load",board:saved.board});setRuns(saved.runs);setActiveRunId(saved.activeRunId??null);}},()=>{if(alive)setReadFailed(true);}).finally(()=>{if(alive)setReady(true);});return()=>{alive=false;};},[]);
+  useEffect(()=>{if(ready&&!readFailed)void persist({board,runs,activeRunId}).catch(()=>{});},[ready,readFailed,board,runs,activeRunId,persist]);
   const checkConnection=useCallback(async()=>{
     setConfig(null);setConfigFailed(false);
     try {const response=await fetch("/api/generations",{signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error();const next:GenerationConfig=await response.json();if(!Array.isArray(next.models))throw new Error();setConfig(next);setReasoningEffort(next.reasoningEffort||"default");setModel(current=>next.models.includes(current)?current:next.models[0]||"");}
@@ -109,19 +111,42 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
     busyRef.current=true;setBusy(true);
     const settings:GenerationSettings={kind,locale,tone:t.toneDefault,model,reasoningEffort};
     const run:GenerationRun={id:crypto.randomUUID(),createdAt:Date.now(),identity:semanticIdentity(board,locale),board:structuredClone(board),brief:compileBrief(board,locale),settings,status:"running"};
-    const next=[run,...runs].slice(0,10);setRuns(next);setPendingResultId(run.id);
+    const next=[run,...runs].slice(0,SAVED_RUN_LIMIT);setRuns(next);setActiveRunId(run.id);setPendingResultId(run.id);
     // Persist the immutable input before the deliberate submission. No automatic retries.
-    if(!readFailed)await persist({board,runs:next}).catch(()=>{});
+    if(!readFailed)await persist({board,runs:next,activeRunId:run.id}).catch(()=>{});
     try {
       const response=await fetch("/api/generations",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:run.id,board:run.board,settings}),signal:AbortSignal.timeout(135000)});
       const data=await response.json();
-      setRuns(current=>current.map(r=>r.id===run.id?response.ok&&data.result?{...r,status:"succeeded",result:data.result}:{...r,status:data.code==="unknown"?"unknown":"failed",error:data.error||t.failedRun}:r));
-    } catch {setRuns(current=>current.map(r=>r.id===run.id?{...r,status:"unknown",error:t.unknown}:r));}
+      finishRun(response.ok&&data.result?{...run,status:"succeeded",result:data.result}:{...run,status:data.code==="unknown"?"unknown":"failed",error:data.error||t.failedRun});
+    } catch {finishRun({...run,status:"unknown",error:t.unknown});}
     finally {busyRef.current=false;setBusy(false);}
+  }
+  function finishRun(finished:GenerationRun) {
+    setRuns(current=>current.map(run=>run.id===finished.id?finished:run));
+    // A deleted pending creation stays deleted; Undo still restores its completed response.
+    setDeletedRun(current=>current?.run.id===finished.id?{...current,run:finished}:current);
+  }
+  function resetCanvas() {
+    dispatch({type:"replace",board:emptyComposition()});setSelectedIds([]);setPickerOpen(false);
+    setActiveRunId(null);setReadingId(null);setPendingResultId(null);setTarget("");setRelation("");setNotice("");
+    setResetVersion(version=>version+1);
+  }
+  function deleteResult(id:string) {
+    const run=runs.find(run=>run.id===id);if(!run)return;
+    setDeletedRun({run,wasActive:id===activeRunId});setRuns(current=>current.filter(run=>run.id!==id));
+    if(id===activeRunId)setActiveRunId(null);
+    if(id===readingId)setReadingId(null);
+    if(id===pendingResultId)setPendingResultId(null);
+  }
+  function undoDelete() {
+    if(!deletedRun)return;
+    setRuns(current=>[deletedRun.run,...current.filter(run=>run.id!==deletedRun.run.id)].sort((a,b)=>b.createdAt-a.createdAt).slice(0,SAVED_RUN_LIMIT));
+    if(deletedRun.wasActive&&!activeRunId)setActiveRunId(deletedRun.run.id);
+    setDeletedRun(null);
   }
   // Canvas nodes move directly; the tray needs a preview to cross its scroll boundary.
   const dragGlyph=dragging?.startsWith("tray:")?emojiById.get(dragging.slice(5))?.glyph:undefined;
-  const latestRun=runs[0], readingRun=runs.find(run=>run.id===readingId);
+  const latestRun=runs.find(run=>run.id===activeRunId), readingRun=runs.find(run=>run.id===readingId);
   function editResult(id:string,text:string) {setRuns(current=>current.map(run=>run.id===id&&run.result?{...run,result:{...run.result,text}}:run));}
   function resultContent(run:GenerationRun) {return <StoryContent key={run.id} run={run} locale={locale} outputName={outputNames[run.settings.kind]} stale={run.identity!==semanticIdentity(board,run.settings.locale)} onEdit={text=>editResult(run.id,text)} onCopy={text=>copy(text)}/>;}
   const outputNames:Record<OutputKind,string>={interpretation:t.interpretOutput,message:t.message,poem:t.poem,story:t.story,lyrics:t.lyrics,"image-prompt":t.imagePrompt,storyboard:t.storyboard};
@@ -145,9 +170,8 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
     <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e=>{const file=e.target.files?.[0];if(file)void importBoard(file);e.target.value="";}}/>
     <DndContext id="playground-editor" sensors={sensors} autoScroll={false} onDragStart={e=>{setDragging(String(e.active.id));}} onDragEnd={endDrag} onDragCancel={()=>setDragging(null)}>
       <div className="pg-workspace">
-        <div className="pg-canvas-column"><Canvas board={board} locale={locale} selectedIds={selectedNodes.map(n=>n.id)} onSelect={setSelectedIds} onTransform={nodes=>dispatch({type:"transform",updates:nodes.map(({id,x,y,scale,rotation})=>({id,patch:{x,y,scale,rotation}}))})} onRemove={ids=>{dispatch({type:"removeMany",ids});setSelectedIds([]);}} onAdd={()=>setPickerOpen(true)} boardRef={boardRef} geometryRef={geometryRef} pickerOpen={pickerOpen} trayDragging={!!dragging} setPickerOpen={setPickerOpen} overlay={<DragOverlay dropAnimation={null}>{dragGlyph&&<span className="pg-drag-glyph"><EmojiArtwork glyph={dragGlyph}/></span>}</DragOverlay>} toolbar={<div className="pg-canvas-toolbar"><span>{board.nodes.length}/{NODE_LIMIT}</span><div><button aria-label={t.undo} title={t.undo} disabled={!history.past.length} onClick={()=>dispatch({type:"undo"})}><Undo2 size={17}/></button><button aria-label={t.redo} title={t.redo} disabled={!history.future.length} onClick={()=>dispatch({type:"redo"})}><Redo2 size={17}/></button><button aria-label={t.clear} title={t.clearHint} disabled={!board.nodes.length} onClick={()=>{dispatch({type:"replace",board:emptyComposition()});setSelectedIds([]);}}><Trash2 size={16}/></button></div></div>} picker={<><label className="pg-search"><Search size={16}/><input aria-label={t.search} placeholder={locale==="es"?"océano, amor, 🌙…":"ocean, love, 🌙…"} value={query} maxLength={150} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></label><div className="pg-filters"><select aria-label={t.category} value={group??"all"} onChange={e=>{setGroup(e.target.value==="all"?null:Number(e.target.value));setPage(0);}}><option value="all">{t.all}</option>{categories.map(c=><option key={c.id} value={c.id}>{c.icon} {c[locale]}</option>)}</select><select aria-label={t.sort} value={sort} onChange={e=>{setSort(e.target.value);setPage(0);}}><option value="relevance">{t.relevance}</option><option value="alphabetical">{t.alphabetical}</option><option value="unicode">{t.unicode}</option></select></div><div className="pg-palette">{visible.map(emoji=><PaletteEmoji key={emoji.id} emoji={emoji} locale={locale} onAdd={()=>add(emoji)} disabled={board.nodes.length>=NODE_LIMIT}/>)}{!visible.length&&<p>{t.noMatches}</p>}</div><div className="pg-paging"><span>{matches.length} · {currentPage+1}/{pages}</span><div><button aria-label={t.previous} disabled={currentPage===0} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={17}/></button><button aria-label={t.next} disabled={currentPage===pages-1} onClick={()=>setPage(p=>p+1)}><ChevronRight size={17}/></button></div></div></>}/>
+        <div className="pg-canvas-column"><Canvas resetVersion={resetVersion} board={board} locale={locale} selectedIds={selectedNodes.map(n=>n.id)} onSelect={setSelectedIds} onTransform={nodes=>dispatch({type:"transform",updates:nodes.map(({id,x,y,scale,rotation})=>({id,patch:{x,y,scale,rotation}}))})} onRemove={ids=>{dispatch({type:"removeMany",ids});setSelectedIds([]);}} onAdd={()=>setPickerOpen(true)} boardRef={boardRef} geometryRef={geometryRef} pickerOpen={pickerOpen} trayDragging={!!dragging} setPickerOpen={setPickerOpen} overlay={<DragOverlay dropAnimation={null}>{dragGlyph&&<span className="pg-drag-glyph"><EmojiArtwork glyph={dragGlyph}/></span>}</DragOverlay>} toolbar={<div className="pg-canvas-toolbar"><span>{board.nodes.length}/{NODE_LIMIT}</span><div><button aria-label={t.undo} title={t.undo} disabled={!history.past.length} onClick={()=>dispatch({type:"undo"})}><Undo2 size={17}/></button><button aria-label={t.redo} title={t.redo} disabled={!history.future.length} onClick={()=>dispatch({type:"redo"})}><Redo2 size={17}/></button><button aria-label={t.clear} title={t.clearHint} onClick={resetCanvas}><RotateCcw size={16}/></button></div></div>} picker={<><label className="pg-search"><Search size={16}/><input aria-label={t.search} placeholder={locale==="es"?"océano, amor, 🌙…":"ocean, love, 🌙…"} value={query} maxLength={150} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></label><div className="pg-filters"><select aria-label={t.category} value={group??"all"} onChange={e=>{setGroup(e.target.value==="all"?null:Number(e.target.value));setPage(0);}}><option value="all">{t.all}</option>{categories.map(c=><option key={c.id} value={c.id}>{c.icon} {c[locale]}</option>)}</select><select aria-label={t.sort} value={sort} onChange={e=>{setSort(e.target.value);setPage(0);}}><option value="relevance">{t.relevance}</option><option value="alphabetical">{t.alphabetical}</option><option value="unicode">{t.unicode}</option></select></div><div className="pg-palette">{visible.map(emoji=><PaletteEmoji key={emoji.id} emoji={emoji} locale={locale} onAdd={()=>add(emoji)} disabled={board.nodes.length>=NODE_LIMIT}/>)}{!visible.length&&<p>{t.noMatches}</p>}</div><div className="pg-paging"><span>{matches.length} · {currentPage+1}/{pages}</span><div><button aria-label={t.previous} disabled={currentPage===0} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={17}/></button><button aria-label={t.next} disabled={currentPage===pages-1} onClick={()=>setPage(p=>p+1)}><ChevronRight size={17}/></button></div></div></>}/>
           <p className="pg-hint">{t.hint}</p><p className={`pg-save ${saveStatus==="failed"?"error":""}`} role="status">{readFailed?t.readFailed:saveStatus==="saving"?t.saving:saveStatus==="failed"?t.failed:t.saved}</p>
-          <StoryShelf runs={runs} locale={locale} outputNames={outputNames} onOpen={setReadingId}/>
 
         </div>
         <aside ref={resultsRef} className="pg-output" aria-label={t.result}>
@@ -156,6 +180,7 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
         </aside>
       </div>
     </DndContext>
+    <StoryShelf runs={runs} locale={locale} outputNames={outputNames} onOpen={setReadingId} onDelete={deleteResult} onUndo={undoDelete} deletedTitle={deletedRun?(creationTitle(deletedRun.run)||outputNames[deletedRun.run.settings.kind]):undefined}/>
     {readingRun&&<StoryModal title={creationTitle(readingRun)||outputNames[readingRun.settings.kind]} locale={locale} onClose={()=>setReadingId(null)}>{resultContent(readingRun)}</StoryModal>}
   </section>;
 }

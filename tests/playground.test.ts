@@ -10,9 +10,9 @@ describe("playground document",()=>{
     expect(state.present.nodes[0].meaning).toBe("Love");expect(state.present.nodes[1].meaning).toBe("Human heart");
     const brief=compileBrief(state.present,"en");expect(brief.interpretation).toContain("Human heart");expect(brief.entities.map(n=>n.id)).toEqual(["first","second"]);
   });
-  it("excludes positions from semantic identity but includes custom meanings and relationships",()=>{
+  it("includes layout, custom meanings and relationships in the creation identity",()=>{
     const board=fixture(),moved=structuredClone(board);moved.nodes[0].x=90;
-    expect(semanticIdentity(moved,"en")).toBe(semanticIdentity(board,"en"));
+    expect(semanticIdentity(moved,"en")).not.toBe(semanticIdentity(board,"en"));
     moved.nodes[0].meaning="Anatomy";expect(semanticIdentity(moved,"en")).not.toBe(semanticIdentity(board,"en"));
     const linked={...board,edges:[{id:"link",source:"first",target:"second",label:"contrasts with"}]};expect(compileBrief(linked,"es").interpretation).toContain("contrasts with");expect(semanticIdentity(linked,"en")).not.toBe(semanticIdentity(board,"en"));
   });
@@ -49,4 +49,25 @@ it("restores generated titles and interpretation runs without changing the input
   expect(restored.result?.title).toBe("Dos corazones");expect(restored.board.title).toBe("");expect(restored.settings.kind).toBe("interpretation");
   const old=restoreRuns([{...run,settings:{...run.settings,kind:"poem"},result:{text:"Old poem",provider:"openrouter",model:"test/text"}}])[0];
   expect(old.result?.text).toBe("Old poem");expect(old.result?.title).toBeUndefined();
+});
+
+it("restores up to 20 saved creations, including records beyond the old limit of 10",()=>{
+  const board=fixture();const runs=Array.from({length:21},(_,index)=>({id:`run-${index}`,identity:semanticIdentity(board,"en"),createdAt:21-index,status:"succeeded",board,settings:{kind:"poem",locale:"en",tone:"gentle",model:"test/text"},result:{text:`Poem ${index}`,provider:"openrouter",model:"test/text"}}));
+  const restored=restoreRuns(runs);expect(restored).toHaveLength(20);expect(restored[19].id).toBe("run-19");
+});
+
+
+it("carries independent placement, size and rotation for repeated symbols and authored interpretations",()=>{
+  const board=fixture();board.nodes[0]={...board.nodes[0],x:48,y:43,scale:.4,rotation:-45};board.nodes[1]={...board.nodes[1],x:50,y:50,scale:2,rotation:90};board.interpretation="Two hearts in a medical classroom.";
+  const brief=compileBrief(board,"en");expect(brief.layout).toEqual([{id:"first",xPercent:48,yPercent:43,sizeMultiplier:.4,clockwiseRotationDegrees:315},{id:"second",xPercent:50,yPercent:50,sizeMultiplier:2,clockwiseRotationDegrees:90}]);expect(brief.interpretation).toBe(board.interpretation);
+  for(const patch of [{x:60},{scale:1},{rotation:0}]){const changed=structuredClone(board);Object.assign(changed.nodes[0],patch);expect(semanticIdentity(changed,"en")).not.toBe(semanticIdentity(board,"en"));}
+  const fullTurn=structuredClone(board);fullTurn.nodes[0].rotation+=360;expect(semanticIdentity(fullTurn,"en")).toBe(semanticIdentity(board,"en"));
+});
+
+it("upgrades a matching legacy identity without marking an unchanged saved creation stale",()=>{
+  const board=fixture(),{layout,...legacy}=compileBrief(board,"en");void layout;
+  const run={id:"legacy-run",identity:JSON.stringify({...legacy,compilerVersion:1}),createdAt:123,status:"succeeded",board,settings:{kind:"poem",locale:"en",tone:"gentle",model:"test/text"},result:{text:"Old poem",provider:"openrouter",model:"test/text"}};
+  expect(restoreRuns([run])[0].identity).toBe(semanticIdentity(board,"en"));
+  // A mismatched identity must not be rewritten as though the creation used these ideas.
+  expect(restoreRuns([{...run,identity:"different ideas"}])[0].identity).toBe("different ideas");
 });

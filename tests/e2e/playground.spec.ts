@@ -79,7 +79,7 @@ test("Discover transfers the selected variant and board JSON round trips",async(
   const emoji=page.getByLabel("waving hand",{exact:true});await emoji.focus();await emoji.press("Enter");await page.getByLabel("Choose a variant").selectOption("👋🏽");
   await page.getByRole("button",{name:"Add to playground",exact:true}).click();await expect(page.locator(".pg-node")).toHaveAttribute("data-glyph","👋🏽");
   await page.locator(".pg-board-menu summary").click();const download=page.waitForEvent("download");await page.getByRole("button",{name:"Export board",exact:true}).click();const file=await download;await file.saveAs("/tmp/playground-roundtrip.json");
-  await page.getByRole("button",{name:"Clear board",exact:true}).click();await expect(page.locator(".pg-node")).toHaveCount(0);
+  await page.getByRole("button",{name:"Reset canvas",exact:true}).click();await expect(page.locator(".pg-node")).toHaveCount(0);
   await page.locator('input[type="file"]').setInputFiles("/tmp/playground-roundtrip.json");await expect(page.locator(".pg-node")).toHaveAttribute("data-glyph","👋🏽");
   await page.getByRole("button",{name:"Undo",exact:true}).click();await expect(page.locator(".pg-node")).toHaveCount(0);
 });

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { ChevronDown, Copy, Download, Feather, Folder, Plus, SlidersHorizontal, Sparkles, Upload } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, Copy, Download, Feather, Folder, Info, Plus, SlidersHorizontal, Sparkles, Upload } from "lucide-react";
 import type { Locale } from "@/lib/types";
 import { outputKinds, reasoningEfforts, type OutputKind, type ReasoningEffort } from "@/features/generation/model";
 import type { Composition } from "./model";
@@ -27,6 +27,16 @@ export default function CreationHeader(props:Props) {
   const t=playgroundLabels[locale],h=labels[locale];
   const [contextOpen,setContextOpen]=useState(false),[relationshipsOpen,setRelationshipsOpen]=useState(false),[settingsOpen,setSettingsOpen]=useState(false),[filesOpen,setFilesOpen]=useState(false);
   const efforts:Record<ReasoningEffort,string>={default:t.reasoningDefault,low:t.reasoningLow,medium:t.reasoningMedium,high:t.reasoningHigh};
+  const summaryLabels=locale==="es"?{name:"Resumen de generación",model:"Modelo",context:"Contexto",none:"Sin contexto adicional",edited:"Interpretación del lienzo editada",automatic:"Interpretación del lienzo automática"}:{name:"Generation summary",model:"Model",context:"Context",none:"No additional context",edited:"Canvas interpretation edited",automatic:"Automatic canvas interpretation"};
+  const [summaryOpen,setSummaryOpen]=useState(false),[summaryPinned,setSummaryPinned]=useState(false);
+  const summaryRef=useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    if(!summaryOpen)return;
+    const dismiss=(event:PointerEvent)=>{if(!summaryRef.current?.contains(event.target as Node)){setSummaryOpen(false);setSummaryPinned(false);}};
+    const escape=(event:KeyboardEvent)=>{if(event.key==="Escape"){setSummaryOpen(false);setSummaryPinned(false);}};
+    document.addEventListener("pointerdown",dismiss);document.addEventListener("keydown",escape);
+    return()=>{document.removeEventListener("pointerdown",dismiss);document.removeEventListener("keydown",escape);};
+  },[summaryOpen]);
   const connectionIssue=configFailed||!!config&&!config.configured;
   return <section className="pg-creation-header" aria-label={t.create}>
     <div className="pg-header-main">
@@ -58,7 +68,16 @@ export default function CreationHeader(props:Props) {
     </div>
     <div className="pg-header-action-area">
       <details className="pg-board-menu" open={filesOpen} onToggle={e=>setFilesOpen(e.currentTarget.open)} onKeyDown={e=>{if(e.key==="Escape")setFilesOpen(false);}}><summary><Folder size={15}/>{h.board}<ChevronDown size={13}/></summary><div><button onClick={()=>{onExport();setFilesOpen(false);}}><Download size={15}/>{t.export}</button><button onClick={()=>{onImport();setFilesOpen(false);}}><Upload size={15}/>{t.import}</button></div></details>
-      <div className="pg-create-column"><button className="primary-button pg-generate" disabled={busy||!board.nodes.length||!config?.configured||!model} title={!board.nodes.length?h.empty:undefined} onClick={onGenerate}><Sparkles size={18}/>{busy?t.generating:t.generate}</button></div>
+      <div className="pg-create-column"><div className="pg-generate-stack"><button className="primary-button pg-generate" disabled={busy||!board.nodes.length||!config?.configured||!model} title={!board.nodes.length?h.empty:undefined} onClick={onGenerate}><Sparkles size={18}/>{busy?t.generating:t.generate}</button>
+        <div ref={summaryRef} className="pg-summary-wrap" onMouseEnter={()=>setSummaryOpen(true)} onMouseLeave={()=>{if(!summaryPinned&&!summaryRef.current?.contains(document.activeElement))setSummaryOpen(false);}} onBlur={event=>{if(!summaryPinned&&!event.currentTarget.contains(event.relatedTarget))setSummaryOpen(false);}}>
+          <button className="pg-summary-trigger" aria-label={summaryLabels.name} aria-expanded={summaryOpen} aria-controls="pg-generation-summary" aria-describedby={summaryOpen?"pg-generation-summary":undefined} onFocus={()=>setSummaryOpen(true)} onClick={()=>{const next=!summaryPinned;setSummaryPinned(next);setSummaryOpen(next);}}><Info size={17}/></button>
+          <div id="pg-generation-summary" className="pg-generation-summary" role="tooltip" hidden={!summaryOpen}>
+            <dl><dt>{summaryLabels.model}</dt><dd>{model||t.checking}</dd><dt>{t.reasoning}</dt><dd>{efforts[reasoningEffort]}</dd>{board.title.trim()&&<><dt>{t.scene}</dt><dd>{board.title}</dd></>}</dl>
+            <h4>{summaryLabels.context}</h4><p>{board.intent.trim()||summaryLabels.none}</p><p className="pg-summary-interpretation">{board.interpretation.trim()?summaryLabels.edited:summaryLabels.automatic}</p>
+            {!!board.edges.length&&<><h4>{t.connections}</h4><ul>{board.edges.map(edge=><li key={edge.id}>{board.nodes.find(node=>node.id===edge.source)?.glyph} {edge.label} → {board.nodes.find(node=>node.id===edge.target)?.glyph}</li>)}</ul></>}
+          </div>
+        </div>
+      </div></div>
     </div>
   </section>;
 }
