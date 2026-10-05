@@ -64,7 +64,7 @@ describe("composition transforms",()=>{
     let state:BoardHistory={past:[],present:board,future:[]};
     state=boardReducer(state,{type:"transform",updates:transformed.map(({id,x,y,scale,rotation})=>({id,patch:{x,y,scale,rotation}}))});
     expect(state.past).toHaveLength(1);expect(state.present.nodes[2]).toEqual(nodes[2]);
-    expect(semanticIdentity(state.present,"en")).toBe(semanticIdentity(board,"en"));
+    expect(semanticIdentity(state.present,"en")).not.toBe(semanticIdentity(board,"en"));
     const saved=state.present;expect(parseComposition(saved)).toEqual(saved);
     state=boardReducer(state,{type:"undo"});expect(state.present).toEqual(board);
     state=boardReducer(state,{type:"redo"});expect(state.present).toEqual(saved);

@@ -64,10 +64,13 @@ export function boardReducer(state:BoardHistory,action:BoardAction): BoardHistor
 }
 export function compileBrief(board:Composition,locale:Locale) {
   const entities=board.nodes.map(({id,glyph,meaning,note,role})=>({id,glyph,meaning,note,role})).sort((a,b)=>a.id.localeCompare(b.id));
+  // Keep the author's arrangement alongside their words, including repeated symbols.
+  // These are world coordinates: zooming and panning do not change the story input.
+  const layout=board.nodes.map(({id,x,y,scale,rotation})=>({id,xPercent:x,yPercent:y,sizeMultiplier:scale,clockwiseRotationDegrees:((rotation%360)+360)%360})).sort((a,b)=>a.id.localeCompare(b.id));
   const relationships=board.edges.map(({source,target,label})=>({source,target,label})).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
   const list=board.nodes.map(n=>`${n.glyph} ${n.meaning}${n.role!=="subject"?` (${locale==="es"?(n.role==="mood"?"ánimo":"ambiente"):n.role})`:""}${n.note?`: ${n.note}`:""}`).join("; ");
   const relations=board.edges.map(e=>`${board.nodes.find(n=>n.id===e.source)?.meaning} → ${e.label} → ${board.nodes.find(n=>n.id===e.target)?.meaning}`).join("; ");
   const preview=board.nodes.length ? [board.title,`${locale==="es"?"Ideas elegidas":"Chosen ideas"}: ${list}.`,relations&&`${locale==="es"?"Relaciones":"Relationships"}: ${relations}.`,board.intent&&`${locale==="es"?"Intención":"Intent"}: ${board.intent}`].filter(Boolean).join("\n") : "";
-  return {compilerVersion:1,locale,title:board.title,entities,relationships,intent:board.intent,interpretation:board.interpretation.trim()||preview};
+  return {compilerVersion:2,locale,title:board.title,entities,relationships,intent:board.intent,interpretation:board.interpretation.trim()||preview,layout};
 }
 export function semanticIdentity(board:Composition,locale:Locale) { return JSON.stringify(compileBrief(board,locale)); }
