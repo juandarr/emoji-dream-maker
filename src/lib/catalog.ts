@@ -47,7 +47,7 @@ function balanced(items: EmojiRecord[]) {
 export function normalize(text: string) { return text.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase().trim(); }
 // Build once on first use, instead of normalizing thousands of labels and
 // keywords on every keystroke. Keep the initial module evaluation lightweight.
-let searchIndex: { emoji: EmojiRecord; labels: string[]; keywords: string[]; all: string[]; glyphs: string[] }[] | undefined;
+let searchIndex: { emoji: EmojiRecord; labels: string[]; keywords: string[]; all: string[]; words: string[]; glyphs: string[] }[] | undefined;
 const browseOrder = new Map<number | null, EmojiRecord[]>();
 export function searchCatalog(query: string, group: number | null = null): EmojiRecord[] {
   const q = normalize(query);
@@ -59,12 +59,13 @@ export function searchCatalog(query: string, group: number | null = null): Emoji
   searchIndex ??= catalog.map(emoji => {
     const labels = Object.values(emoji.labels).map(normalize);
     const keywords = [...emoji.keywords.en, ...emoji.keywords.es].map(normalize);
-    return { emoji, labels, keywords, all: [...labels, ...keywords], glyphs: [emoji.glyph, ...emoji.variants.map(v => v.glyph)].map(normalize) };
+    const all = [...labels, ...keywords];
+    return { emoji, labels, keywords, all, words: all.flatMap(value => value.split(/[^\p{L}\p{N}]+/u).filter(Boolean)), glyphs: [emoji.glyph, ...emoji.variants.map(v => v.glyph)].map(normalize) };
   });
   const candidates = group === null ? searchIndex : searchIndex.filter(entry => entry.emoji.group === group);
   const terms = q.split(/\s+/);
-  return candidates.map(({emoji, labels, keywords, all, glyphs}) => {
-    const score = glyphs.includes(q) || labels.includes(q) ? 0 : keywords.includes(q) ? 1 : all.some(v => v.startsWith(q)) ? 2 : terms.every(t => all.some(v => v.includes(t))) ? 3 : Infinity;
+  return candidates.map(({emoji, labels, keywords, all, words, glyphs}) => {
+    const score = glyphs.includes(q) || labels.includes(q) ? 0 : keywords.includes(q) ? 1 : all.some(v => v.startsWith(q)) ? 2 : terms.every(t => words.some(word => word.startsWith(t))) ? 3 : Infinity;
     return { emoji, score };
   }).filter(e => Number.isFinite(e.score)).sort((a,b) => a.score - b.score || a.emoji.order - b.emoji.order).map(e => e.emoji);
 }
