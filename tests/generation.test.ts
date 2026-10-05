@@ -76,3 +76,34 @@ it("explains a completion budget exhausted by reasoning without exposing the rea
   vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({choices:[{finish_reason:"length",message:{content:"",reasoning:"hidden thinking"}}]})));
   await expect(openRouterGenerator.generate(board,settings)).rejects.toThrow("completion budget");
 });
+
+it("accepts Interpretation as a generation mode",async()=>{
+  const generate=vi.spyOn(openRouterGenerator,"generate").mockResolvedValue({title:"A little connection",text:"Two symbols suggest a new beginning.",model:"test/text",provider:"openrouter"});
+  const response=await POST(request({board,settings:{...settings,kind:"interpretation",locale:"es"},requestId:crypto.randomUUID()}));
+  expect(response.status).toBe(200);expect(generate).toHaveBeenCalledWith(board,expect.objectContaining({kind:"interpretation",locale:"es"}));
+});
+
+it("requests a one-paragraph interpretation and a title in the UI language in one call",async()=>{
+  const fetch=vi.fn().mockResolvedValue(Response.json({choices:[{message:{content:JSON.stringify({title:"Un nuevo comienzo",text:"Estos símbolos evocan\n\nuna nueva amistad."})}}]}));vi.stubGlobal("fetch",fetch);
+  const result=await openRouterGenerator.generate(board,{...settings,kind:"interpretation",locale:"es"});
+  expect(result.title).toBe("Un nuevo comienzo");expect(result.text).toBe("Estos símbolos evocan una nueva amistad.");
+  expect(fetch).toHaveBeenCalledTimes(1);const prompt=JSON.parse(fetch.mock.calls[0][1].body).messages[0].content;
+  expect(prompt).toContain("exactly one paragraph");expect(prompt).toContain("Spanish");expect(prompt).toContain('"title"');expect(prompt).toContain("otherwise invent");
+});
+
+it("preserves an explicitly supplied title exactly, even when the model substitutes its own",async()=>{
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({choices:[{message:{content:'```json\n{"title":"Wrong title","text":"A little poem"}\n```'}}]})));
+  const result=await openRouterGenerator.generate({...board,title:"  My title: 🌙 & YOU  "},settings);
+  expect(result.title).toBe("  My title: 🌙 & YOU  ");expect(result.text).toBe("A little poem");
+});
+
+it("gives plain-text model responses a title while keeping the authored board untouched",async()=>{
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({choices:[{message:{content:"An ordinary text-only poem."}}]})));
+  const result=await openRouterGenerator.generate(board,settings);
+  expect(result.title).toBe("Love");expect(result.text).toBe("An ordinary text-only poem.");expect(board.title).toBe("");
+});
+
+it("rejects incomplete structured output instead of exposing broken JSON as a creation",async()=>{
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({choices:[{message:{content:'{"title":"A lost tale","text":'}}]})));
+  await expect(openRouterGenerator.generate(board,settings)).rejects.toThrow("incomplete creation");
+});

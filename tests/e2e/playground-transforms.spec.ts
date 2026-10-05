@@ -54,7 +54,7 @@ test("single-object handles work with keyboard and cancel pointer transforms on 
   const box=await resize.boundingBox();await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);await page.mouse.down();await page.mouse.move(box!.x+box!.width/2+80,box!.y+box!.height/2+80,{steps:8});
   expect((await values(page))[0].scale).toBeGreaterThan(1);await page.keyboard.press("Escape");await page.mouse.up();expect(await values(page)).toEqual(before);await expect(node).toHaveAttribute("aria-pressed","false");
   await node.click();await drag(page,resize,30,30);expect((await values(page))[0].scale).toBeGreaterThan(1);
-  const download=page.waitForEvent("download");await page.getByRole("button",{name:"Export board",exact:true}).click();const exported=await download;await exported.saveAs("/tmp/playground-transforms.json");
+  await page.locator(".pg-board-menu summary").click();const download=page.waitForEvent("download");await page.getByRole("button",{name:"Export board",exact:true}).click();const exported=await download;await exported.saveAs("/tmp/playground-transforms.json");
   await page.getByRole("button",{name:"Clear board",exact:true}).click();await page.locator('input[type="file"]').setInputFiles("/tmp/playground-transforms.json");expect((await values(page))[0].scale).toBeGreaterThan(1);
 });
 

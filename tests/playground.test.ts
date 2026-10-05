@@ -41,3 +41,12 @@ it("recovers interrupted runs and discards corrupt optional run records",()=>{
   const runs=restoreRuns([null,{id:"broken",identity:"",status:"succeeded"},run]);
   expect(runs).toHaveLength(1);expect(runs[0].status).toBe("unknown");expect(runs[0].brief.entities).toHaveLength(2);expect(runs[0].error).toContain("not be retried automatically");
 });
+
+it("restores generated titles and interpretation runs without changing the input snapshot",()=>{
+  const board=fixture();
+  const run={id:"titled-run",identity:semanticIdentity(board,"es"),createdAt:123,status:"succeeded",board,settings:{kind:"interpretation",locale:"es",tone:"gentle",model:"test/text"},result:{title:"Dos corazones",text:"Un vínculo entre dos personas.",provider:"openrouter",model:"test/text"}};
+  const restored=restoreRuns([run])[0];
+  expect(restored.result?.title).toBe("Dos corazones");expect(restored.board.title).toBe("");expect(restored.settings.kind).toBe("interpretation");
+  const old=restoreRuns([{...run,settings:{...run.settings,kind:"poem"},result:{text:"Old poem",provider:"openrouter",model:"test/text"}}])[0];
+  expect(old.result?.text).toBe("Old poem");expect(old.result?.title).toBeUndefined();
+});

@@ -19,7 +19,7 @@ test("picker stays open for repeated click additions and mouse drops, then dismi
 });
 test("outside dismissal allows the clicked field to keep focus, and Escape works outside the picker",async({page})=>{
   await open(page);await page.getByRole("button",{name:"Exit fullscreen",exact:true}).click();
-  await page.getByRole("button",{name:"Open emoji picker",exact:true}).click();await page.getByLabel("Scene title",{exact:true}).click();await expect(page.getByRole("dialog",{name:"Emoji library",exact:true})).toHaveCount(0);await expect(page.getByLabel("Scene title",{exact:true})).toBeFocused();
+  await page.getByRole("button",{name:"Add context",exact:true}).click();await page.getByRole("button",{name:"Open emoji picker",exact:true}).click();await page.getByLabel("Scene title",{exact:true}).click();await expect(page.getByRole("dialog",{name:"Emoji library",exact:true})).toHaveCount(0);await expect(page.getByLabel("Scene title",{exact:true})).toBeFocused();
   await page.getByRole("button",{name:"Open emoji picker",exact:true}).click();await page.getByLabel("Scene title",{exact:true}).focus();await page.keyboard.press("Escape");await expect(page.getByRole("dialog",{name:"Emoji library",exact:true})).toHaveCount(0);
 });
 test("phone picker stays open after touch additions and a long-press drop",async({browser})=>{

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor, useDraggable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { BookOpen, ChevronLeft, ChevronRight, Copy, Feather, Download, Plus, Redo2, Search, Sparkles, Trash2, Undo2, Upload, X } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, Copy, Feather, Plus, Redo2, Search, Trash2, Undo2, X } from "lucide-react";
 import { categories, emojiById, searchCatalog } from "@/lib/catalog";
 import type { EmojiRecord, Locale } from "@/lib/types";
 import { boardReducer, clamp, compileBrief, createNode, emptyComposition, NODE_LIMIT, parseComposition, semanticIdentity, type BoardNode } from "./model";
@@ -11,13 +11,14 @@ import { playgroundLabels } from "./labels";
 import EmojiArtwork from "./emoji-artwork";
 import Canvas, {type CanvasGeometry} from "./Canvas";
 import {worldPoint} from "./camera";
-import { outputKinds, reasoningEfforts, type ReasoningEffort, type GenerationRun, type GenerationSettings, type OutputKind } from "@/features/generation/model";
+import { creationTitle, type ReasoningEffort, type GenerationRun, type GenerationSettings, type OutputKind } from "@/features/generation/model";
 
-import { ReadingButton, StoryContent, StoryModal, StoryPage, StoryShelf, storyLabels } from "./StoryResults";
+import { ReadingButton, StoryContent, StoryModal, StoryPage, StoryShelf, StorySymbols, storyLabels } from "./StoryResults";
 import "./playground-story.css";
+import CreationHeader, { type GenerationConfig } from "./CreationHeader";
 
 type Seed={id:string;emoji:EmojiRecord;glyph:string};
-type Config={configured:boolean;models:string[];maxOutputTokens:number;reasoningEffort?:ReasoningEffort};
+
 function PaletteEmoji({emoji,locale,onAdd,disabled}:{emoji:EmojiRecord;locale:Locale;onAdd:()=>void;disabled:boolean}) {
   const {setNodeRef,attributes,listeners,isDragging}=useDraggable({id:`tray:${emoji.id}`,disabled});
   const t=playgroundLabels[locale];
@@ -40,12 +41,12 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
   const [ready,setReady]=useState(false),[readFailed,setReadFailed]=useState(false),[saveStatus,setSaveStatus]=useState<"saved"|"saving"|"failed">("saved");
   const [selectedIds,setSelectedIds]=useState<string[]>([]),[query,setQuery]=useState(""),[group,setGroup]=useState<number|null>(null),[sort,setSort]=useState("relevance"),[page,setPage]=useState(0);
   const [target,setTarget]=useState(""),[relation,setRelation]=useState(""),[dragging,setDragging]=useState<string|null>(null),[notice,setNotice]=useState("");
-  const [runs,setRuns]=useState<GenerationRun[]>([]),[busy,setBusy]=useState(false),[config,setConfig]=useState<Config|null>(null),[configFailed,setConfigFailed]=useState(false);
+  const [runs,setRuns]=useState<GenerationRun[]>([]),[busy,setBusy]=useState(false),[config,setConfig]=useState<GenerationConfig|null>(null),[configFailed,setConfigFailed]=useState(false);
   const [reasoningEffort,setReasoningEffort]=useState<ReasoningEffort>("default"),[pendingResultId,setPendingResultId]=useState<string|null>(null);
   const [pickerOpen,setPickerOpen]=useState(false);
   const geometryRef=useRef<CanvasGeometry>({camera:{x:0,y:0,zoom:1},width:600,height:500});
   const resultsRef=useRef<HTMLElement|null>(null);
-  const [kind,setKind]=useState<OutputKind>("poem"),[outputLocale,setOutputLocale]=useState<Locale>(locale),[model,setModel]=useState("");
+  const [kind,setKind]=useState<OutputKind>("interpretation"),[model,setModel]=useState("");
   const boardRef=useRef<HTMLDivElement|null>(null),fileRef=useRef<HTMLInputElement|null>(null),consumedSeed=useRef(""),saveQueue=useRef<Promise<void>>(Promise.resolve()),saveVersion=useRef(0),busyRef=useRef(false);
   const sensors=useSensors(useSensor(MouseSensor,{activationConstraint:{distance:6}}),useSensor(TouchSensor,{activationConstraint:{delay:200,tolerance:8}}),useSensor(KeyboardSensor));
   const persist=useCallback((workspace:Workspace)=>{
@@ -59,7 +60,7 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
   useEffect(()=>{if(ready&&!readFailed)void persist({board,runs}).catch(()=>{});},[ready,readFailed,board,runs,persist]);
   const checkConnection=useCallback(async()=>{
     setConfig(null);setConfigFailed(false);
-    try {const response=await fetch("/api/generations",{signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error();const next:Config=await response.json();if(!Array.isArray(next.models))throw new Error();setConfig(next);setReasoningEffort(next.reasoningEffort||"default");setModel(current=>next.models.includes(current)?current:next.models[0]||"");}
+    try {const response=await fetch("/api/generations",{signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error();const next:GenerationConfig=await response.json();if(!Array.isArray(next.models))throw new Error();setConfig(next);setReasoningEffort(next.reasoningEffort||"default");setModel(current=>next.models.includes(current)?current:next.models[0]||"");}
     catch {setConfigFailed(true);}
   },[]);
   useEffect(()=>{void checkConnection();},[checkConnection]);
@@ -106,8 +107,8 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
   async function generate() {
     if(busyRef.current||!board.nodes.length||!config?.configured)return;
     busyRef.current=true;setBusy(true);
-    const settings:GenerationSettings={kind,locale:outputLocale,tone:playgroundLabels[outputLocale].toneDefault,model,reasoningEffort};
-    const run:GenerationRun={id:crypto.randomUUID(),createdAt:Date.now(),identity:semanticIdentity(board,outputLocale),board:structuredClone(board),brief:compileBrief(board,outputLocale),settings,status:"running"};
+    const settings:GenerationSettings={kind,locale,tone:t.toneDefault,model,reasoningEffort};
+    const run:GenerationRun={id:crypto.randomUUID(),createdAt:Date.now(),identity:semanticIdentity(board,locale),board:structuredClone(board),brief:compileBrief(board,locale),settings,status:"running"};
     const next=[run,...runs].slice(0,10);setRuns(next);setPendingResultId(run.id);
     // Persist the immutable input before the deliberate submission. No automatic retries.
     if(!readFailed)await persist({board,runs:next}).catch(()=>{});
@@ -123,34 +124,27 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
   const latestRun=runs[0], readingRun=runs.find(run=>run.id===readingId);
   function editResult(id:string,text:string) {setRuns(current=>current.map(run=>run.id===id&&run.result?{...run,result:{...run.result,text}}:run));}
   function resultContent(run:GenerationRun) {return <StoryContent key={run.id} run={run} locale={locale} outputName={outputNames[run.settings.kind]} stale={run.identity!==semanticIdentity(board,run.settings.locale)} onEdit={text=>editResult(run.id,text)} onCopy={text=>copy(text)}/>;}
-  const effortNames:Record<ReasoningEffort,string>={default:t.reasoningDefault,low:t.reasoningLow,medium:t.reasoningMedium,high:t.reasoningHigh};
-  const outputNames:Record<OutputKind,string>={message:t.message,poem:t.poem,story:t.story,lyrics:t.lyrics,"image-prompt":t.imagePrompt,storyboard:t.storyboard};
+  const outputNames:Record<OutputKind,string>={interpretation:t.interpretOutput,message:t.message,poem:t.poem,story:t.story,lyrics:t.lyrics,"image-prompt":t.imagePrompt,storyboard:t.storyboard};
+  const inspector=<div className="pg-panel pg-inspector"><h2>{t.inspector}</h2>{selected?<><div className="pg-selected"><span><EmojiArtwork glyph={selected.glyph}/></span><p>{selected.label}</p><button aria-label={t.duplicate} title={t.duplicate} disabled={board.nodes.length>=NODE_LIMIT} onClick={()=>{const node={...selected,id:crypto.randomUUID(),x:clamp(selected.x+5),y:clamp(selected.y+5)};dispatch({type:"add",node});setSelectedIds([node.id]);}}><Copy size={16}/></button><button aria-label={t.remove} title={t.remove} onClick={()=>dispatch({type:"remove",id:selected.id})}><Trash2 size={16}/></button></div><div className="pg-inspector-fields"><MeaningField key={selected.id} label={t.meaning} value={selected.meaning} onCommit={meaning=>dispatch({type:"update",id:selected.id,patch:{meaning}})}/><label>{t.role}<select aria-label={t.role} value={selected.role} onChange={e=>dispatch({type:"update",id:selected.id,patch:{role:e.target.value as BoardNode["role"]}})}><option value="subject">{t.subject}</option><option value="setting">{t.setting}</option><option value="mood">{t.mood}</option></select></label>{!!emojiById.get(selected.emojiId)?.variants.length&&<label>{t.variant}<select aria-label={t.variant} value={selected.glyph} onChange={e=>dispatch({type:"update",id:selected.id,patch:{glyph:e.target.value}})}><option value={emojiById.get(selected.emojiId)!.glyph}>{emojiById.get(selected.emojiId)!.glyph}</option>{emojiById.get(selected.emojiId)!.variants.map(v=><option value={v.glyph} key={v.id}>{v.glyph}</option>)}</select></label>}<label className="pg-note">{t.note}<input aria-label={t.note} maxLength={500} value={selected.note} onChange={e=>dispatch({type:"update",id:selected.id,patch:{note:e.target.value}})}/></label></div>
+          {board.nodes.length>1&&<form className="pg-connect" onSubmit={e=>{e.preventDefault();if(target&&relation.trim()&&target!==selected.id){dispatch({type:"edge",edge:{id:crypto.randomUUID(),source:selected.id,target,label:relation.trim()}});setRelation("");}}}><select aria-label={t.target} value={target===selected.id?"":target} onChange={e=>setTarget(e.target.value)}><option value="">{t.target}…</option>{board.nodes.filter(n=>n.id!==selected.id).map((n,i)=><option key={n.id} value={n.id}>{n.glyph} {n.meaning} ({i+1})</option>)}</select><input aria-label={t.relationship} maxLength={80} placeholder={t.relationPlaceholder} value={relation} onChange={e=>setRelation(e.target.value)}/><button type="submit" disabled={!board.nodes.some(n=>n.id===target&&n.id!==selected.id)||!relation.trim()}><Plus size={15}/>{t.connect}</button></form>}</>:selectedNodes.length>1?<div className="pg-group-inspector"><p>{t.groupSelected.replace("{count}",String(selectedNodes.length))}</p><p>{t.groupHint}</p><button className="pg-secondary" onClick={()=>{dispatch({type:"removeMany",ids:selectedNodes.map(n=>n.id)});setSelectedIds([]);}}><Trash2 size={15}/>{t.deleteGroup}</button></div>:<p>{t.select}</p>}
+          {!!board.edges.length&&<div className="pg-relationships"><h3>{t.connections}</h3>{board.edges.map(e=><div key={e.id}><span>{board.nodes.find(n=>n.id===e.source)?.glyph} {e.label} → {board.nodes.find(n=>n.id===e.target)?.glyph}</span><button aria-label={`${t.remove} ${e.label}`} onClick={()=>dispatch({type:"removeEdge",id:e.id})}><X size={14}/></button></div>)}</div>}</div>;
   if(!ready)return <div className="pg-loading" role="status">{t.loading}</div>;
   return <section className={`playground ${dragging?"is-dragging":""}`} aria-label={t.name}>
     {(notice||readFailed)&&<div className="storage-notice" role="status"><span>{readFailed?t.readFailed:notice}</span>{readFailed?<button onClick={()=>{dispatch({type:"replace",board:emptyComposition()});setReadFailed(false);}}>{t.fresh}</button>:<button aria-label="Close notice" onClick={()=>setNotice("")}><X size={16}/></button>}</div>}
-    <div className="pg-topbar"><label className="pg-scene"><span>{t.scene}</span><input aria-label={t.scene} maxLength={120} placeholder={t.scenePlaceholder} value={board.title} onChange={e=>dispatch({type:"fields",patch:{title:e.target.value}})}/></label><div className="pg-file-actions"><button onClick={()=>download(board,"emoji-playground.json")}><Download size={15}/>{t.export}</button><button onClick={()=>fileRef.current?.click()}><Upload size={15}/>{t.import}</button><input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e=>{const file=e.target.files?.[0];if(file)void importBoard(file);e.target.value="";}}/></div></div>
+    <CreationHeader
+      locale={locale} board={board} interpretation={displayBrief.interpretation}
+      kind={kind} onKind={setKind} outputNames={outputNames}
+      model={model} onModel={setModel} reasoningEffort={reasoningEffort} onReasoning={setReasoningEffort}
+      config={config} configFailed={configFailed} onCheck={()=>void checkConnection()}
+      busy={busy} status={busy?t.generating:latestRun?.status==="succeeded"?t.generated:""}
+      error={latestRun&&(latestRun.status==="failed"||latestRun.status==="unknown")?`${t.failedRun}: ${latestRun.error||t.unknown}`:undefined}
+      onGenerate={()=>void generate()} onFields={patch=>dispatch({type:"fields",patch})}
+      onCopy={()=>void copy(displayBrief.interpretation)} onExport={()=>download(board,"emoji-playground.json")} onImport={()=>fileRef.current?.click()}
+      inspector={inspector}
+    />
+    <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e=>{const file=e.target.files?.[0];if(file)void importBoard(file);e.target.value="";}}/>
     <DndContext id="playground-editor" sensors={sensors} autoScroll={false} onDragStart={e=>{setDragging(String(e.active.id));}} onDragEnd={endDrag} onDragCancel={()=>setDragging(null)}>
       <div className="pg-workspace">
-        <div className="pg-control-grid">
-          <div className="pg-panel pg-meaning">
-            <div className="pg-panel-heading"><h2><Feather size={16}/>{t.meaningTitle}</h2><button className="pg-copy-brief" title={t.copy} aria-label={t.copy} disabled={!board.nodes.length} onClick={()=>void copy(displayBrief.interpretation)}><Copy size={15}/></button></div>
-            <div className="pg-brief-fields"><label>{t.intent}<textarea aria-label={t.intent} placeholder={t.intentPlaceholder} rows={3} maxLength={1000} value={board.intent} onChange={e=>dispatch({type:"fields",patch:{intent:e.target.value}})}/></label><label>{t.interpretation}<textarea aria-label={t.interpretation} rows={3} maxLength={4000} placeholder={t.noMeaning} value={displayBrief.interpretation} disabled={!board.nodes.length} onChange={e=>dispatch({type:"fields",patch:{interpretation:e.target.value}})}/></label></div>
-            {board.interpretation&&<button className="pg-link" onClick={()=>dispatch({type:"fields",patch:{interpretation:""}})}>{t.reset}</button>}
-            <div className="pg-settings"><label>{t.output}<select aria-label={t.output} value={kind} onChange={e=>setKind(e.target.value as OutputKind)}>{outputKinds.map(k=><option key={k} value={k}>{outputNames[k]}</option>)}</select></label><label>{t.language}<select aria-label={t.language} value={outputLocale} onChange={e=>setOutputLocale(e.target.value as Locale)}><option value="en">English</option><option value="es">Español</option></select></label></div>
-            <details className="pg-model-options"><summary>{locale==="es"?"Modelo y opciones":"Model & options"}<span>{effortNames[reasoningEffort]}</span></summary><div className="pg-settings"><label>{t.model}<select aria-label={t.model} value={model} onChange={e=>setModel(e.target.value)}>{config?.models.map(m=><option value={m} key={m}>{m}</option>)}</select></label><label>{t.reasoning}<select aria-label={t.reasoning} value={reasoningEffort} onChange={e=>setReasoningEffort(e.target.value as ReasoningEffort)}>{reasoningEfforts.map(effort=><option value={effort} key={effort}>{effortNames[effort]}</option>)}</select></label></div><p>{t.reasoningHint}</p><p>{t.cap.replace("{tokens}",String(config?.maxOutputTokens||8192))}</p><p>{t.mediaHint}</p><p>{t.meaningHint}</p><button className="pg-link" disabled={!board.nodes.length} onClick={()=>void copy(displayBrief.interpretation)}>{t.localMessage}</button></details>
-          </div>
-          <div className="pg-inspector-slot"><div className="pg-panel pg-inspector"><h2>{t.inspector}</h2>{selected?<><div className="pg-selected"><span><EmojiArtwork glyph={selected.glyph}/></span><p>{selected.label}</p><button aria-label={t.duplicate} title={t.duplicate} disabled={board.nodes.length>=NODE_LIMIT} onClick={()=>{const node={...selected,id:crypto.randomUUID(),x:clamp(selected.x+5),y:clamp(selected.y+5)};dispatch({type:"add",node});setSelectedIds([node.id]);}}><Copy size={16}/></button><button aria-label={t.remove} title={t.remove} onClick={()=>dispatch({type:"remove",id:selected.id})}><Trash2 size={16}/></button></div><div className="pg-inspector-fields"><MeaningField key={selected.id} label={t.meaning} value={selected.meaning} onCommit={meaning=>dispatch({type:"update",id:selected.id,patch:{meaning}})}/><label>{t.role}<select aria-label={t.role} value={selected.role} onChange={e=>dispatch({type:"update",id:selected.id,patch:{role:e.target.value as BoardNode["role"]}})}><option value="subject">{t.subject}</option><option value="setting">{t.setting}</option><option value="mood">{t.mood}</option></select></label>{!!emojiById.get(selected.emojiId)?.variants.length&&<label>{t.variant}<select aria-label={t.variant} value={selected.glyph} onChange={e=>dispatch({type:"update",id:selected.id,patch:{glyph:e.target.value}})}><option value={emojiById.get(selected.emojiId)!.glyph}>{emojiById.get(selected.emojiId)!.glyph}</option>{emojiById.get(selected.emojiId)!.variants.map(v=><option value={v.glyph} key={v.id}>{v.glyph}</option>)}</select></label>}<label className="pg-note">{t.note}<input aria-label={t.note} maxLength={500} value={selected.note} onChange={e=>dispatch({type:"update",id:selected.id,patch:{note:e.target.value}})}/></label></div>
-          {board.nodes.length>1&&<form className="pg-connect" onSubmit={e=>{e.preventDefault();if(target&&relation.trim()&&target!==selected.id){dispatch({type:"edge",edge:{id:crypto.randomUUID(),source:selected.id,target,label:relation.trim()}});setRelation("");}}}><select aria-label={t.target} value={target===selected.id?"":target} onChange={e=>setTarget(e.target.value)}><option value="">{t.target}…</option>{board.nodes.filter(n=>n.id!==selected.id).map((n,i)=><option key={n.id} value={n.id}>{n.glyph} {n.meaning} ({i+1})</option>)}</select><input aria-label={t.relationship} maxLength={80} placeholder={t.relationPlaceholder} value={relation} onChange={e=>setRelation(e.target.value)}/><button type="submit" disabled={!board.nodes.some(n=>n.id===target&&n.id!==selected.id)||!relation.trim()}><Plus size={15}/>{t.connect}</button></form>}</>:selectedNodes.length>1?<div className="pg-group-inspector"><p>{t.groupSelected.replace("{count}",String(selectedNodes.length))}</p><p>{t.groupHint}</p><button className="pg-secondary" onClick={()=>{dispatch({type:"removeMany",ids:selectedNodes.map(n=>n.id)});setSelectedIds([]);}}><Trash2 size={15}/>{t.deleteGroup}</button></div>:<p>{t.select}</p>}
-          {!!board.edges.length&&<div className="pg-relationships"><h3>{t.connections}</h3>{board.edges.map(e=><div key={e.id}><span>{board.nodes.find(n=>n.id===e.source)?.glyph} {e.label} → {board.nodes.find(n=>n.id===e.target)?.glyph}</span><button aria-label={`${t.remove} ${e.label}`} onClick={()=>dispatch({type:"removeEdge",id:e.id})}><X size={14}/></button></div>)}</div>}</div></div>
-        </div>
-        <div className="pg-create-column">
-          <button className="primary-button pg-generate" disabled={busy||!board.nodes.length||!config?.configured||!model} onClick={()=>void generate()}><Sparkles size={17}/>{busy?t.generating:t.generate}</button>
-          <p className={`pg-connection ${config?.configured?"connected":""}`} role="status">{configFailed?t.checkFailed:!config?t.checking:config.configured?t.connected:t.setup}</p>{(!config||!config.configured)&&<button className="pg-link" onClick={()=>void checkConnection()}>{t.check}</button>}
-          {latestRun&&<div className="pg-generation-status" role="status" aria-live="polite"><p>{busy?t.generating:latestRun.status==="succeeded"?t.generated:latestRun.status==="running"?t.generating:`${t.failedRun}: ${latestRun.error||t.unknown}`}</p><button className="pg-link" onClick={()=>setReadingId(latestRun.id)}>{t.viewResult}</button></div>}
-          <p className="pg-sending">{t.sending}</p>
-          <div className="pg-creation-note" aria-hidden="true"><Feather size={24}/><span>{locale==="es"?"Pequeños símbolos.\nInfinitas historias.":"Small symbols.\nEndless stories."}</span></div>
-        </div>
-
         <div className="pg-canvas-column"><Canvas board={board} locale={locale} selectedIds={selectedNodes.map(n=>n.id)} onSelect={setSelectedIds} onTransform={nodes=>dispatch({type:"transform",updates:nodes.map(({id,x,y,scale,rotation})=>({id,patch:{x,y,scale,rotation}}))})} onRemove={ids=>{dispatch({type:"removeMany",ids});setSelectedIds([]);}} onAdd={()=>setPickerOpen(true)} boardRef={boardRef} geometryRef={geometryRef} pickerOpen={pickerOpen} trayDragging={!!dragging} setPickerOpen={setPickerOpen} overlay={<DragOverlay dropAnimation={null}>{dragGlyph&&<span className="pg-drag-glyph"><EmojiArtwork glyph={dragGlyph}/></span>}</DragOverlay>} toolbar={<div className="pg-canvas-toolbar"><span>{board.nodes.length}/{NODE_LIMIT}</span><div><button aria-label={t.undo} title={t.undo} disabled={!history.past.length} onClick={()=>dispatch({type:"undo"})}><Undo2 size={17}/></button><button aria-label={t.redo} title={t.redo} disabled={!history.future.length} onClick={()=>dispatch({type:"redo"})}><Redo2 size={17}/></button><button aria-label={t.clear} title={t.clearHint} disabled={!board.nodes.length} onClick={()=>{dispatch({type:"replace",board:emptyComposition()});setSelectedIds([]);}}><Trash2 size={16}/></button></div></div>} picker={<><label className="pg-search"><Search size={16}/><input aria-label={t.search} placeholder={locale==="es"?"océano, amor, 🌙…":"ocean, love, 🌙…"} value={query} maxLength={150} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></label><div className="pg-filters"><select aria-label={t.category} value={group??"all"} onChange={e=>{setGroup(e.target.value==="all"?null:Number(e.target.value));setPage(0);}}><option value="all">{t.all}</option>{categories.map(c=><option key={c.id} value={c.id}>{c.icon} {c[locale]}</option>)}</select><select aria-label={t.sort} value={sort} onChange={e=>{setSort(e.target.value);setPage(0);}}><option value="relevance">{t.relevance}</option><option value="alphabetical">{t.alphabetical}</option><option value="unicode">{t.unicode}</option></select></div><div className="pg-palette">{visible.map(emoji=><PaletteEmoji key={emoji.id} emoji={emoji} locale={locale} onAdd={()=>add(emoji)} disabled={board.nodes.length>=NODE_LIMIT}/>)}{!visible.length&&<p>{t.noMatches}</p>}</div><div className="pg-paging"><span>{matches.length} · {currentPage+1}/{pages}</span><div><button aria-label={t.previous} disabled={currentPage===0} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={17}/></button><button aria-label={t.next} disabled={currentPage===pages-1} onClick={()=>setPage(p=>p+1)}><ChevronRight size={17}/></button></div></div></>}/>
           <p className="pg-hint">{t.hint}</p><p className={`pg-save ${saveStatus==="failed"?"error":""}`} role="status">{readFailed?t.readFailed:saveStatus==="saving"?t.saving:saveStatus==="failed"?t.failed:t.saved}</p>
           <StoryShelf runs={runs} locale={locale} outputNames={outputNames} onOpen={setReadingId}/>
@@ -158,10 +152,10 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
         </div>
         <aside ref={resultsRef} className="pg-output" aria-label={t.result}>
           <div className="pg-output-heading"><h2><BookOpen size={16}/>{s.output}</h2>{latestRun&&<ReadingButton locale={locale} onClick={()=>setReadingId(latestRun.id)}/>}</div>
-          {latestRun?resultContent(latestRun):<StoryPage><span className="pg-story-kicker">{s.chapter}</span><span className="pg-story-flourish" aria-hidden="true">❦</span><h3 className="pg-story-title">{s.blank}</h3><div className="pg-story-divider" aria-hidden="true"><span>✧</span></div><p className="pg-story-invitation">{s.blankHint}</p><Feather className="pg-story-feather" size={36}/><span className="pg-story-end" aria-hidden="true">❧</span></StoryPage>}
+          {latestRun?resultContent(latestRun):<StoryPage><span className="pg-story-kicker">{s.chapter}</span><StorySymbols nodes={board.nodes} locale={locale}/><h3 className="pg-story-title">{s.blank}</h3><div className="pg-story-divider" aria-hidden="true"><span>✧</span></div><p className="pg-story-invitation">{s.blankHint}</p><Feather className="pg-story-feather" size={36}/><span className="pg-story-end" aria-hidden="true">❧</span></StoryPage>}
         </aside>
       </div>
     </DndContext>
-    {readingRun&&<StoryModal title={readingRun.board.title||outputNames[readingRun.settings.kind]} locale={locale} onClose={()=>setReadingId(null)}>{resultContent(readingRun)}</StoryModal>}
+    {readingRun&&<StoryModal title={creationTitle(readingRun)||outputNames[readingRun.settings.kind]} locale={locale} onClose={()=>setReadingId(null)}>{resultContent(readingRun)}</StoryModal>}
   </section>;
 }

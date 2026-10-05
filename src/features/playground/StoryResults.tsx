@@ -2,9 +2,12 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BookOpen, Copy, Expand, Feather, Pencil, X } from "lucide-react";
-import type { GenerationRun, OutputKind, ReasoningEffort } from "@/features/generation/model";
+import { creationTitle, type GenerationRun, type OutputKind, type ReasoningEffort } from "@/features/generation/model";
 import type { Locale } from "@/lib/types";
 import { playgroundLabels } from "./labels";
+import EmojiArtwork from "./emoji-artwork";
+import type { BoardNode } from "./model";
+import { storyBody, storyHeading } from "./story-fonts";
 
 export const storyLabels = {
   en: { chapter: "THE STORY SO FAR", history: "Your story shelf", historyHint: "Little worlds worth returning to. Your last 10 creations, saved here.", emptyHistory: "Your first creation will find a home here.", blank: "Every story begins with a little wonder.", blankHint: "Arrange your symbols, give them meaning, and let your imagination turn the page.", output: "The next chapter", read: "Open reading view", close: "Close reading view", done: "Done editing", details: "Creation details", open: "Read creation", waiting: "A new world is taking shape…", failed: "An unfinished chapter", untitled: "Untitled creation" },
@@ -22,8 +25,19 @@ function Ornament({ className }: { className: string }) {
   </svg>;
 }
 
+export function StorySymbols({ nodes, locale }: { nodes: BoardNode[]; locale: Locale }) {
+  const symbols = [...new Map(nodes.map(node => [node.glyph, node])).values()];
+  if (!symbols.length) return <span className="pg-story-flourish" aria-hidden="true">❦</span>;
+  return <div className="pg-story-symbols" role="img" aria-label={`${locale === "es" ? "Símbolos del lienzo" : "Canvas symbols"}: ${symbols.map(node => node.label).join(", ")}`}>
+    <span className="pg-story-symbol-motif" aria-hidden="true">{symbols.slice(0, 5).map(node => <span key={node.id}><EmojiArtwork glyph={node.glyph}/></span>)}{symbols.length > 5 && <span className="pg-story-symbol-more">+{symbols.length - 5}</span>}</span>
+  </div>;
+}
+
 export function StoryPage({ children }: { children: ReactNode }) {
-  return <div className="pg-story-page"><Ornament className="pg-ornament top-left"/><Ornament className="pg-ornament top-right"/><Ornament className="pg-ornament bottom-left"/><Ornament className="pg-ornament bottom-right"/><div className="pg-story-inner">{children}</div></div>;
+  return <div className={`pg-story-page ${storyHeading.variable} ${storyBody.variable}`}>
+    <svg className="pg-imagination-thread" viewBox="0 0 64 36" fill="none" aria-hidden="true"><path d="M2 18C12 18 12 5 24 5S38 31 50 31 56 18 64 18" stroke="currentColor" strokeWidth="1"/><circle cx="2" cy="18" r="2" fill="currentColor"/></svg>
+    <Ornament className="pg-ornament top-left"/><Ornament className="pg-ornament top-right"/><Ornament className="pg-ornament bottom-left"/><Ornament className="pg-ornament bottom-right"/><div className="pg-story-inner">{children}</div>
+  </div>;
 }
 
 export function StoryContent({ run, locale, outputName, stale, onEdit, onCopy }: { run: GenerationRun; locale: Locale; outputName: string; stale: boolean; onEdit: (text: string) => void; onCopy: (text: string) => Promise<boolean> }) {
@@ -34,8 +48,8 @@ export function StoryContent({ run, locale, outputName, stale, onEdit, onCopy }:
   return <>
     <StoryPage>
       <span className="pg-story-kicker">{outputName}</span>
-      <span className="pg-story-flourish" aria-hidden="true">❦</span>
-      <h3 className="pg-story-title">{run.board.title || outputName}</h3>
+      <StorySymbols nodes={run.board.nodes} locale={locale}/>
+      <h3 className="pg-story-title">{creationTitle(run) || outputName}</h3>
       <div className="pg-story-divider" aria-hidden="true"><span>✧</span></div>
       {run.result ? editing ? <label className="pg-story-editor">{t.outputEdit}<textarea autoFocus aria-label={t.outputEdit} maxLength={16000} value={run.result.text} onChange={e => onEdit(e.target.value)}/></label> : <div className="pg-story-prose" lang={run.settings.locale}>{run.result.text}</div> : <div className="pg-story-pending" role="status"><Feather size={30}/><p>{run.status === "running" ? s.waiting : s.failed}</p><small>{run.status === "running" ? t.generating : run.error || t.unknown}</small></div>}
       <span className="pg-story-end" aria-hidden="true">❧</span>
@@ -49,7 +63,7 @@ export function StoryContent({ run, locale, outputName, stale, onEdit, onCopy }:
 
 export function StoryShelf({ runs, locale, outputNames, onOpen }: { runs: GenerationRun[]; locale: Locale; outputNames: Record<OutputKind, string>; onOpen: (id: string) => void }) {
   const s = storyLabels[locale], t = playgroundLabels[locale];
-  return <section className="pg-results" aria-label={s.history}><div className="pg-shelf-heading"><h2><BookOpen size={17}/>{s.history}</h2><span>{runs.length} / 10</span></div><p className="pg-hint">{s.historyHint}</p>{runs.length ? <div className="pg-result-list">{runs.map(run => <button className="pg-history-card" key={run.id} onClick={() => onOpen(run.id)} aria-label={`${s.open}: ${run.board.title || outputNames[run.settings.kind]}`}><span className="pg-history-meta">{outputNames[run.settings.kind]}<span>{new Date(run.createdAt).toLocaleDateString(locale, { month: "short", day: "numeric" })}</span></span><span className="pg-history-title">{run.board.title || outputNames[run.settings.kind]}</span><span className="pg-history-excerpt">{run.result?.text || (run.status === "running" ? t.generating : run.error || t.unknown)}</span><span className="pg-history-footer"><span aria-hidden="true">{run.board.nodes.slice(0, 5).map(n => n.glyph).join(" ")}</span><span>{s.open} <span aria-hidden="true">↗</span></span></span></button>)}</div> : <div className="pg-shelf-empty"><Feather size={20}/><p>{s.emptyHistory}</p></div>}</section>;
+  return <section className="pg-results" aria-label={s.history}><div className="pg-shelf-heading"><h2><BookOpen size={17}/>{s.history}</h2><span>{runs.length} / 10</span></div><p className="pg-hint">{s.historyHint}</p>{runs.length ? <div className="pg-result-list">{runs.map(run => <button className="pg-history-card" key={run.id} onClick={() => onOpen(run.id)} aria-label={`${s.open}: ${creationTitle(run) || outputNames[run.settings.kind]}`}><span className="pg-history-meta">{outputNames[run.settings.kind]}<span>{new Date(run.createdAt).toLocaleDateString(locale, { month: "short", day: "numeric" })}</span></span><span className="pg-history-title">{creationTitle(run) || outputNames[run.settings.kind]}</span><span className="pg-history-excerpt">{run.result?.text || (run.status === "running" ? t.generating : run.error || t.unknown)}</span><span className="pg-history-footer"><span aria-hidden="true">{run.board.nodes.slice(0, 5).map(n => n.glyph).join(" ")}</span><span>{s.open} <span aria-hidden="true">↗</span></span></span></button>)}</div> : <div className="pg-shelf-empty"><Feather size={20}/><p>{s.emptyHistory}</p></div>}</section>;
 }
 
 export function StoryModal({ title, locale, onClose, children }: { title: string; locale: Locale; onClose: () => void; children: ReactNode }) {
