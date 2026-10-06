@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760">
+    <defs><linearGradient id="paper" x2="0" y2="1"><stop stop-color="#fffdf5"/><stop offset="1" stop-color="#eee4cf"/></linearGradient><filter id="shadow"><feDropShadow dx="0" dy="10" stdDeviation="17" flood-opacity=".19"/></filter></defs>
+    <rect width="1200" height="760" fill="#15131b"/>
+    <text x="40" y="48" fill="#e9ddeb" font-family="Georgia,serif" font-size="25">Playground</text><text x="195" y="48" fill="#9b8ba7" font-size="12">/  Soft editorial</text>
+    <text x="40" y="91" fill="#bfb1c8" font-size="13" font-weight="600">Make a</text>
+    <rect x="40" y="104" width="605" height="54" rx="10" fill="#211e27" stroke="#b9a180"/>
+    <text x="59" y="138" fill="#f4eada" font-family="Georgia,serif" font-size="19.2" font-weight="600">Short story</text><path d="M608 126l7 7 7-7" fill="none" stroke="#d6bc90" stroke-width="2"/>
+    <text x="41" y="183" fill="#aa9daf" font-size="12">Give your symbols a world, a beginning and an ending.</text>
+    <text x="43" y="222" fill="#bbacc7" font-size="12">＋  Add context</text><text x="171" y="222" fill="#bbacc7" font-size="12">○  Add relationships</text><text x="352" y="222" fill="#bbacc7" font-size="12">⚙  Settings</text>
+    <rect x="934" y="110" width="218" height="56" rx="10" fill="#8063a0"/>
+    <text x="967" y="146" fill="#ffffff" font-family="Georgia,serif" font-size="19.2" font-weight="600">✦  Generate</text>
+    <text x="1110" y="61" fill="#aa9caf" font-size="12">▣ Board ⌄</text>
+    <rect x="38" y="257" width="761" height="445" rx="14" fill="white" stroke="#b9a180" filter="url(#shadow)"/>
+    <path d="M38 319H799" stroke="#e5dfe9"/><path d="M38 271V319" fill="none"/>
+    
+    <text x="57" y="292" fill="#80758b" font-size="11">0 / 80</text>
+    <text x="641" y="292" fill="#786a82" font-size="11">−    100%    ＋    □</text>
+    <path d="M381 427v23m0-15c-11-22-30-20-35-20 8 23 21 24 35 20zm0 0c10-22 27-20 33-20-6 20-18 26-33 20z" fill="none" stroke="#79a283" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><text x="251" y="479" fill="#54445e" font-family="Georgia,serif" font-size="23">A little space for a big idea.</text><text x="275" y="513" fill="#8b8192" font-size="13">Start with a symbol and see where it goes.</text><rect x="326" y="538" width="138" height="42" rx="10" fill="#8063a0"/><text x="348" y="565" fill="#fff" font-size="14" font-weight="650">＋  Add emoji</text>
+    <rect x="828" y="257" width="334" height="445" rx="14" fill="url(#paper)" stroke="#d0bf9d" filter="url(#shadow)"/>
+    <rect x="842" y="271" width="306" height="417" rx="8" fill="none" stroke="#d9c8a7"/>
+    <text x="995" y="375" text-anchor="middle" fill="#a18758" font-family="Georgia,serif" font-size="29">❦</text>
+    <text x="995" y="434" text-anchor="middle" fill="#544638" font-family="Georgia,serif" font-size="27">Every story begins…</text>
+    <path d="M926 469h138" stroke="#bda67b"/><text x="995" y="473" text-anchor="middle" fill="#a38b64" font-size="16">✧</text>
+    <text x="995" y="514" text-anchor="middle" fill="#756552" font-family="Georgia,serif" font-size="16">Arrange your symbols,</text>
+    <text x="995" y="547" text-anchor="middle" fill="#756552" font-family="Georgia,serif" font-size="16">Let your imagination turn the page.</text>
+    <text x="995" y="651" text-anchor="middle" fill="#9d865f" font-family="Georgia,serif" font-size="28">❧</text>
+    <rect x="38" y="728" width="15" height="15" rx="5" fill="#8063a0"/>
+    <text x="64" y="740" fill="#b3a8bb" font-size="12">Warm parchment and restrained controls · matched 14px canvas and result corners</text>
+    <g filter="url(#shadow)"><rect x="40" y="158" width="315" height="122" rx="10" fill="#27232f" stroke="#b9a180"/><rect x="49" y="165" width="297" height="34" rx="6" fill="#3b3047"/><text x="65" y="188" fill="#f6e8d4" font-size="14.4" font-weight="600">✓  Short story</text><text x="65" y="226" fill="#c8bbd0" font-size="14.4">Poem</text><text x="65" y="261" fill="#c8bbd0" font-size="14.4">Message</text></g>
+    </svg>

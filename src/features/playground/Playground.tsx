@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor, useDraggable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { BookOpen, ChevronLeft, ChevronRight, Copy, Feather, Plus, Redo2, RotateCcw, Search, Trash2, Undo2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Feather, Plus, Redo2, RotateCcw, Search, Trash2, Undo2, X } from "lucide-react";
 import { categories, emojiById, searchCatalog } from "@/lib/catalog";
 import type { EmojiRecord, Locale } from "@/lib/types";
 import { boardReducer, clamp, compileBrief, createNode, emptyComposition, NODE_LIMIT, parseComposition, semanticIdentity, type BoardNode } from "./model";
@@ -175,7 +175,7 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
 
         </div>
         <aside ref={resultsRef} className="pg-output" aria-label={t.result}>
-          <div className="pg-output-heading"><h2><BookOpen size={16}/>{s.output}</h2>{latestRun&&<ReadingButton locale={locale} onClick={()=>setReadingId(latestRun.id)}/>}</div>
+          {latestRun&&<div className="pg-output-heading"><ReadingButton locale={locale} onClick={()=>setReadingId(latestRun.id)}/></div>}
           {latestRun?resultContent(latestRun):<StoryPage><span className="pg-story-kicker">{s.chapter}</span><StorySymbols nodes={board.nodes} locale={locale}/><h3 className="pg-story-title">{s.blank}</h3><div className="pg-story-divider" aria-hidden="true"><span>✧</span></div><p className="pg-story-invitation">{s.blankHint}</p><Feather className="pg-story-feather" size={36}/><span className="pg-story-end" aria-hidden="true">❧</span></StoryPage>}
         </aside>
       </div>
