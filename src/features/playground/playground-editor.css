@@ -51,3 +51,5 @@
 .pg-picker-dropdowns>label{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:11px;color:#c5b5d8}
 .pg-picker-dropdowns select{width:100%;min-width:0;min-height:35px;font-size:11px;padding:8px 5px}
 @media(pointer:coarse){.pg-picker-dropdowns select{min-height:44px}}
+
+.pg-toolbar-tooltip{pointer-events:auto}

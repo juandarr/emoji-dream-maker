@@ -30,6 +30,13 @@ export default function CreationHeader(props:Props) {
   const summaryLabels=locale==="es"?{name:"Resumen de generación",model:"Modelo",context:"Contexto",none:"Sin contexto adicional",edited:"Interpretación del lienzo editada",automatic:"Interpretación del lienzo automática"}:{name:"Generation summary",model:"Model",context:"Context",none:"No additional context",edited:"Canvas interpretation edited",automatic:"Automatic canvas interpretation"};
   const [summaryOpen,setSummaryOpen]=useState(false),[summaryPinned,setSummaryPinned]=useState(false);
   const summaryRef=useRef<HTMLDivElement>(null);
+  const filesRef=useRef<HTMLDetailsElement>(null);
+  useEffect(()=>{
+    if(!filesOpen)return;
+    const dismiss=(event:PointerEvent)=>{if(!filesRef.current?.contains(event.target as Node))setFilesOpen(false);};
+    document.addEventListener("pointerdown",dismiss);
+    return()=>document.removeEventListener("pointerdown",dismiss);
+  },[filesOpen]);
   useEffect(()=>{
     if(!summaryOpen)return;
     const dismiss=(event:PointerEvent)=>{if(!summaryRef.current?.contains(event.target as Node)){setSummaryOpen(false);setSummaryPinned(false);}};
@@ -57,8 +64,8 @@ export default function CreationHeader(props:Props) {
         <div id="pg-symbol-editor" className="pg-header-inspector" hidden={!relationshipsOpen}>{inspector}</div>
       </div>
       <section id="pg-generation-settings" className="pg-panel pg-model-options" aria-label={h.settings} hidden={!settingsOpen}>
-        <div className="pg-settings"><label>{t.model}<select aria-label={t.model} value={model} onChange={e=>onModel(e.target.value)}>{config?.models.map(m=><option value={m} key={m}>{m}</option>)}</select></label><label>{t.reasoning}<select aria-label={t.reasoning} value={reasoningEffort} onChange={e=>onReasoning(e.target.value as ReasoningEffort)}>{reasoningEfforts.map(effort=><option value={effort} key={effort}>{efforts[effort]}</option>)}</select></label></div>
-        <p>{t.reasoningHint}</p><p>{t.cap.replace("{tokens}",String(config?.maxOutputTokens||8192))}</p><p>{t.mediaHint}</p><p>{t.sending}</p>
+        <div className="pg-settings"><label>{t.model}<select aria-label={t.model} disabled={!config?.models.length} value={model} onChange={e=>onModel(e.target.value)}>{!config?.models.length&&<option value="">{config?t.noModels:t.checking}</option>}{config?.models.map(m=><option value={m} key={m}>{m}</option>)}</select></label><label>{t.reasoning}<select aria-label={t.reasoning} value={reasoningEffort} onChange={e=>onReasoning(e.target.value as ReasoningEffort)}>{reasoningEfforts.map(effort=><option value={effort} key={effort}>{efforts[effort]}</option>)}</select></label></div>
+        <p>{t.reasoningHint}</p><p>{t.cap.replace("{tokens}",(config?.maxOutputTokens||8192).toLocaleString(locale))}</p><p>{t.mediaHint}</p><p>{t.sending}</p>
         <p className="pg-connection">{configFailed?t.checkFailed:!config?t.checking:config.configured?t.connected:t.setup}</p>{(!config||!config.configured)&&<button className="pg-link" onClick={onCheck}>{t.check}</button>}
         <button className="pg-link" disabled={!board.nodes.length} onClick={onCopy}>{t.localMessage}</button>
       </section>
@@ -67,11 +74,11 @@ export default function CreationHeader(props:Props) {
       {!error&&<span className="pg-header-status" role="status" aria-live="polite">{status}</span>}
     </div>
     <div className="pg-header-action-area">
-      <details className="pg-board-menu" open={filesOpen} onToggle={e=>setFilesOpen(e.currentTarget.open)} onKeyDown={e=>{if(e.key==="Escape")setFilesOpen(false);}}><summary><Folder size={15}/>{h.board}<ChevronDown size={13}/></summary><div><button onClick={()=>{onExport();setFilesOpen(false);}}><Download size={15}/>{t.export}</button><button onClick={()=>{onImport();setFilesOpen(false);}}><Upload size={15}/>{t.import}</button></div></details>
+      <details ref={filesRef} className="pg-board-menu" open={filesOpen} onToggle={e=>setFilesOpen(e.currentTarget.open)} onKeyDown={e=>{if(e.key==="Escape"){e.preventDefault();e.stopPropagation();setFilesOpen(false);filesRef.current?.querySelector("summary")?.focus();}}}><summary><Folder size={15}/>{h.board}<ChevronDown size={13}/></summary><div><button onClick={()=>{onExport();setFilesOpen(false);filesRef.current?.querySelector("summary")?.focus();}}><Download size={15}/>{t.export}</button><button onClick={()=>{onImport();setFilesOpen(false);filesRef.current?.querySelector("summary")?.focus();}}><Upload size={15}/>{t.import}</button></div></details>
       <div className="pg-create-column"><div className="pg-generate-stack"><button className="primary-button pg-generate" disabled={busy||!board.nodes.length||!config?.configured||!model} title={!board.nodes.length?h.empty:undefined} onClick={onGenerate}><Sparkles size={18}/>{busy?t.generating:t.generate}</button>
         <div ref={summaryRef} className="pg-summary-wrap" onMouseEnter={()=>setSummaryOpen(true)} onMouseLeave={()=>{if(!summaryPinned&&!summaryRef.current?.contains(document.activeElement))setSummaryOpen(false);}} onBlur={event=>{if(!summaryPinned&&!event.currentTarget.contains(event.relatedTarget))setSummaryOpen(false);}}>
           <button className="pg-summary-trigger" aria-label={summaryLabels.name} aria-expanded={summaryOpen} aria-controls="pg-generation-summary" aria-describedby={summaryOpen?"pg-generation-summary":undefined} onFocus={()=>setSummaryOpen(true)} onClick={()=>{const next=!summaryPinned;setSummaryPinned(next);setSummaryOpen(next);}}><Info size={17}/></button>
-          <div id="pg-generation-summary" className="pg-generation-summary" role="tooltip" hidden={!summaryOpen}>
+          <div id="pg-generation-summary" className="pg-generation-summary" role="tooltip" tabIndex={0} hidden={!summaryOpen}>
             <dl><dt>{summaryLabels.model}</dt><dd>{model||t.checking}</dd><dt>{t.reasoning}</dt><dd>{efforts[reasoningEffort]}</dd>{board.title.trim()&&<><dt>{t.scene}</dt><dd>{board.title}</dd></>}</dl>
             <h4>{summaryLabels.context}</h4><p>{board.intent.trim()||summaryLabels.none}</p><p className="pg-summary-interpretation">{board.interpretation.trim()?summaryLabels.edited:summaryLabels.automatic}</p>
             {!!board.edges.length&&<><h4>{t.connections}</h4><ul>{board.edges.map(edge=><li key={edge.id}>{board.nodes.find(node=>node.id===edge.source)?.glyph} {edge.label} → {board.nodes.find(node=>node.id===edge.target)?.glyph}</li>)}</ul></>}

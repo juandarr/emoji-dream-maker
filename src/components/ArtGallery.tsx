@@ -20,7 +20,7 @@ export default function ArtGallery({ result, locale, reduced, retry, onOpen }: {
     {result.status === "loading" ? <div className="art-skeletons" role="status" aria-label={t.loading}>
       {[0, 1, 2].map(index => <div className={`art-skeleton ${reduced ? "" : "shimmer"}`} key={index}><Palette size={24}/><span/><span/></div>)}
     </div> : result.status !== "ready" ? <div className="source-empty"><p>{failure}</p><button onClick={retrySource}>{t.retry}<RefreshCw size={13}/></button></div> : <>
-      <div className="art-results-label"><span>{items.length} {t.visualConnections}</span><span>{t.clickToExplore}</span></div>
+      <div className="art-results-label"><span>{items.length.toLocaleString(locale)} {items.length===1?t.visualConnectionOne:t.visualConnections}</span><span>{t.clickToExplore}</span></div>
       <div className="art-grid">
         {items.map((item, index) => <article className="artwork-card" key={item.id}>
           <button className="artwork-preview" onClick={() => { onOpen(); setSelected(index); }} aria-label={`${t.expandImage}: ${item.title}`}>

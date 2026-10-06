@@ -40,7 +40,7 @@ test("blank titles are generated and retained; language follows the UI immediate
   expect((await request).postDataJSON()).toMatchObject({board:{title:""},settings:{kind:"interpretation",locale:"es"}});
   await expect(page.locator(".pg-output .pg-story-title")).toHaveText("La invitación de la luna");await expect(page.locator(".pg-output .pg-story-prose")).toHaveText("Estos símbolos sugieren un viaje hacia lo desconocido.");
   await expect(page.locator(".pg-history-card")).toContainText("La invitación de la luna");await expect(page.getByText("Guardado en este dispositivo",{exact:true})).toBeVisible();
-  await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-output .pg-story-title")).toHaveText("La invitación de la luna");
+  await page.reload();await page.getByRole("button",{name:"Espacio creativo",exact:true}).click();await expect(page.locator(".pg-output .pg-story-title")).toHaveText("La invitación de la luna");
   await page.locator(".language-picker select").selectOption("en");await page.getByLabel("Make a",{exact:true}).selectOption("poem");
   const second=page.waitForRequest(r=>r.url().endsWith("/api/generations")&&r.method()==="POST");await page.getByRole("button",{name:"Generate",exact:true}).click();
   expect((await second).postDataJSON().settings).toMatchObject({kind:"poem",locale:"en"});await expect(page.locator(".pg-output .pg-story-title")).toHaveText("The Moon’s Invitation");

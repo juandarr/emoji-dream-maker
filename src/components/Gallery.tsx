@@ -56,17 +56,17 @@ function MediaSection({provider,result,locale,retry,reduced,onPlay}:{provider:Ex
   const Icon=icons[provider];
   const message=result.status==="empty"?(provider==="youtube"?t.noLearningVideos:provider==="freesound"?t.noSounds:t.noMedia):result.reason==="setup"?t.videoSetup:result.reason==="credentials"?t.credentials:result.reason==="quota"?t.quota:result.reason==="timeout"?t.timeout:t.network;
   return <section className={`media-section ${provider}-section`} aria-label={titles[provider]} aria-busy={result.status==="loading"}>
-    <div className="section-heading"><h3><Icon size={17}/>{titles[provider]}</h3>{provider==="giphy"&&<a className="giphy-credit" href="https://giphy.com" target="_blank" rel="noopener noreferrer">Powered By <strong>GIPHY</strong><span className="giphy-bars" aria-hidden="true"/></a>}</div>
+    <div className="section-heading"><h3><Icon size={17}/>{titles[provider]}</h3>{provider==="giphy"&&<a className="giphy-credit" href="https://giphy.com" target="_blank" rel="noopener noreferrer">{t.powered} <strong>GIPHY</strong><span className="giphy-bars" aria-hidden="true"/></a>}</div>
     {provider==="youtube"&&result.status==="ready"&&<p className="video-section-hint">{t.learningVideosHint}</p>}
     {provider==="freesound"&&result.status==="ready"&&<p className="sound-section-hint">{t.soundsHint}</p>}
     {provider==="freesound"&&result.status==="ready"&&result.partial&&<div className="sound-section-hint"><p role="status">{t.soundsPartial}</p><button onClick={retry}>{t.retry}</button></div>}
-    {result.status==="loading"?<div className="loading-state"><LoaderCircle className={reduced?"":"spin"} size={18}/>{t.loading}<div className="skeleton-line"/><div className="skeleton-line short"/></div>:result.status!=="ready"?<div className="source-empty"><p>{message}</p>{result.reason!=="credentials"&&<button onClick={retry}>{t.retry}<ChevronRight size={14}/></button>}</div>:<div className={`media-items ${provider}`}>
+    {result.status==="loading"?<div className="loading-state" role="status"><LoaderCircle className={reduced?"":"spin"} size={18}/>{t.loading}<div className="skeleton-line"/><div className="skeleton-line short"/></div>:result.status!=="ready"?<div className="source-empty" role="status"><p>{message}</p>{result.reason!=="credentials"&&<button onClick={retry}>{t.retry}<ChevronRight size={14}/></button>}</div>:<div className={`media-items ${provider}`}>
       {result.items.map(item=>provider==="youtube"?<VideoCard key={item.id} item={item} t={t} onPlay={onPlay}/>:provider==="giphy"?<a key={item.id} href={safeURL(item.sourceUrl)} target="_blank" rel="noopener noreferrer" className="gif-card"><Preview item={item}/><span>{item.title}<ArrowUpRight size={13}/></span></a>:<SoundCard key={item.id} item={item} t={t}/>)}
     </div>}
   </section>;
 }
 
-export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose,onRemember,onFavorite,isFavorite}:{emoji:EmojiRecord;glyph:string;locale:Locale;initialTopic?:TopicCandidate;reduced:boolean;onClose:()=>void;onRemember:(d:Discovery)=>void;onFavorite:(d:Discovery)=>void;isFavorite:(d:Discovery)=>boolean}) {
+export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose,onRemember,onFavorite,isFavorite,returnFocus}:{returnFocus?:HTMLElement|null;emoji:EmojiRecord;glyph:string;locale:Locale;initialTopic?:TopicCandidate;reduced:boolean;onClose:()=>void;onRemember:(d:Discovery)=>void;onFavorite:(d:Discovery)=>void;isFavorite:(d:Discovery)=>boolean}) {
   const t=messages[locale];
   const [topic,setTopic]=useState(initialTopic||defaultTopic(emoji,locale));
   const [trail,setTrail]=useState<TopicCandidate[]>([]);
@@ -86,7 +86,7 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
   function closeGallery(){setActiveVideo(null);pauseMedia();onClose();}
 
   useEffect(()=>{
-    const previous=document.activeElement as HTMLElement|null;
+    const previous=returnFocus||document.activeElement as HTMLElement|null;
     const node=dialog.current; node?.focus();
     const key=(e:KeyboardEvent)=>{
       if(node?.querySelector("dialog[open]"))return;
@@ -101,7 +101,7 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
     const overflow=document.body.style.overflow; document.body.style.overflow="hidden";
     document.addEventListener("keydown",key);
     return ()=>{node?.querySelectorAll<HTMLMediaElement>("audio, video").forEach(media=>media.pause());document.removeEventListener("keydown",key);document.body.style.overflow=overflow;previous?.focus();subjectController.current?.abort();};
-  },[onClose]);
+  },[onClose,returnFocus]);
 
   useEffect(()=>{
     if(initialTopic) return;
@@ -191,10 +191,10 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
       if(event.target instanceof HTMLMediaElement)dialog.current?.querySelectorAll<HTMLMediaElement>("audio, video").forEach(media=>{if(media!==event.target)media.pause();});
     }} initial={{opacity:0,y:reduced?0:32,scale:reduced?1:.97}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:reduced?0:20}} transition={{duration:reduced?.1:.28}}>
       <div className="gallery-top"><span><Sparkles size={14}/>{t.discovery}</span><button className="icon-button" onClick={closeGallery} aria-label={t.close}><X size={22}/></button></div>
-      <header className="gallery-header"><span className="gallery-emoji">{glyph}</span><div><h2 id="gallery-title" tabIndex={-1}>{resolving?emoji.labels[locale]:topic.label}</h2>{(resolving||topic.suggested)&&<p className="gallery-subtitle">{resolving?t.loadingSubject:t.suggested}</p>}</div><button className={`favorite-button ${isFavorite(discovery)?"active":""}`} disabled={resolving} aria-label={isFavorite(discovery)?t.unfavorite:t.favorite} onClick={()=>onFavorite(discovery)}><Heart size={20} fill={isFavorite(discovery)?"currentColor":"none"}/></button></header>
+      <header className="gallery-header"><span className="gallery-emoji">{glyph}</span><div><h2 id="gallery-title" lang={resolving?locale:topic.language} tabIndex={-1}>{resolving?emoji.labels[locale]:topic.label}</h2>{(resolving||topic.suggested)&&<p className="gallery-subtitle">{resolving?t.loadingSubject:t.suggested}</p>}</div><button className={`favorite-button ${isFavorite(discovery)?"active":""}`} disabled={resolving} aria-pressed={isFavorite(discovery)} aria-label={isFavorite(discovery)?t.unfavorite:t.favorite} onClick={()=>onFavorite(discovery)}><Heart size={20} fill={isFavorite(discovery)?"currentColor":"none"}/></button></header>
       {trail.length>0&&<nav className="exploration-trail" aria-label={locale==="es"?"Camino de exploración":"Exploration path"}><button onClick={goBack}>← {locale==="es"?"Volver a":"Back to"} {trail.at(-1)?.label}</button></nav>}
-      <div className="topic-bar"><div>{alternatives.some(c=>c.label!==topic.label)&&<span>{t.alternative}</span>}{alternatives.filter(c=>c.label!==topic.label).map(c=><button key={c.wikiTitle||c.label} onClick={()=>chooseTopic(c)} disabled={resolving}>{c.label}<ChevronRight size={12}/></button>)}</div><button className="change-subject" onClick={()=>setChanging(!changing)} disabled={resolving}><Search size={14}/>{t.change}</button></div>
-      <AnimatePresence>{changing&&<motion.div className="subject-picker" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}><form onSubmit={findSubjects}><Search size={17}/><input autoFocus maxLength={150} aria-label={t.subjectSearch} placeholder={t.subjectSearch} value={query} onChange={e=>setQuery(e.target.value)}/><button className="primary-button" disabled={searching||!query.trim()}>{searching?<LoaderCircle size={16} className="spin"/>:t.find}</button></form>{subjectResults&&<div className="subject-results" aria-label={t.results}>{subjectResults.length?subjectResults.map(c=><button onClick={()=>chooseTopic(c)} key={c.wikiTitle}><BookOpen size={14}/>{c.label}<ChevronRight size={14}/></button>):<p>{t.noSubjects}</p>}</div>}</motion.div>}</AnimatePresence>
+      <div className="topic-bar"><div>{alternatives.some(c=>c.label!==topic.label)&&<span>{t.alternative}</span>}{alternatives.filter(c=>c.label!==topic.label).map(c=><button key={c.wikiTitle||c.label} lang={c.language} onClick={()=>chooseTopic(c)} disabled={resolving}>{c.label}<ChevronRight size={12}/></button>)}</div><button className="change-subject" aria-expanded={changing} aria-controls="gallery-subject-picker" onClick={()=>setChanging(!changing)} disabled={resolving}><Search size={14}/>{t.change}</button></div>
+      <AnimatePresence>{changing&&<motion.div id="gallery-subject-picker" className="subject-picker" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}><form onSubmit={findSubjects}><Search size={17}/><input autoFocus maxLength={150} aria-label={t.subjectSearch} placeholder={t.subjectSearch} value={query} onChange={e=>setQuery(e.target.value)}/><button className="primary-button" aria-label={t.find} disabled={searching||!query.trim()}>{searching?<LoaderCircle size={16} className="spin"/>:t.find}</button></form>{subjectResults&&<div className="subject-results" role="region" aria-live="polite" aria-label={t.results}>{subjectResults.length?subjectResults.map(c=><button onClick={()=>chooseTopic(c)} lang={c.language} key={c.wikiTitle}><BookOpen size={14}/>{c.label}<ChevronRight size={14}/></button>):<p>{t.noSubjects}</p>}</div>}</motion.div>}</AnimatePresence>
       <div className="gallery-body"><WikipediaContext key={`${topic.label}:${topic.language}`} result={resolving?loading:results.wikipedia} topic={topic} emojiLabel={emoji.labels[locale]} locale={locale} reduced={reduced} retry={()=>void loadSource("wikipedia")} change={()=>setChanging(true)} choose={chooseTopic}/><ArtGallery key={`${topic.label}:${topic.language}:art`} result={results.art} locale={locale} reduced={reduced} retry={()=>void loadSource("art")} onOpen={()=>{pauseMedia();setActiveVideo(null);}}/>{providers.filter(p=>p!=="wikipedia"&&p!=="art").map(p=><MediaSection key={`${topic.label}:${topic.language}:${p}`} provider={p} result={results[p]} locale={locale} reduced={reduced} retry={()=>void loadSource(p)} onPlay={item=>{pauseMedia();setActiveVideo(item);}}/>)}</div>
       {activeVideo&&<VideoPlayer key={activeVideo.id} item={activeVideo} locale={locale} onClose={()=>setActiveVideo(null)}/>}
       <footer className="gallery-footer"><Check size={13}/>{t.stop}</footer>

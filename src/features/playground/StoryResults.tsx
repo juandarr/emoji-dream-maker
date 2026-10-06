@@ -5,15 +5,15 @@ import { BookOpen, ChevronDown, ChevronUp, Copy, Expand, Feather, Pencil, Trash2
 import { creationTitle, type GenerationRun, type OutputKind, type ReasoningEffort } from "@/features/generation/model";
 import type { Locale } from "@/lib/types";
 import { playgroundLabels } from "./labels";
+import { nodeLabel } from "./localization";
+import { generationErrorMessage } from "@/features/generation/messages";
 import EmojiArtwork from "./emoji-artwork";
 import type { BoardNode } from "./model";
 import { SAVED_RUN_LIMIT } from "./storage";
 import { storyBody, storyHeading } from "./story-fonts";
 
-export const storyLabels = {
-  en: { chapter: "THE STORY SO FAR", history: "Your story shelf", historyHint: "Little worlds worth returning to. Your last 20 creations, saved here.", emptyHistory: "Your first creation will find a home here.", blank: "Every story begins with a little wonder.", blankHint: "Arrange your symbols, give them meaning, and let your imagination turn the page.", read: "Open reading view", close: "Close reading view", done: "Done editing", details: "Creation details", open: "Read creation", waiting: "A new world is taking shape…", failed: "An unfinished chapter", untitled: "Untitled creation" },
-  es: { chapter: "LA HISTORIA HASTA AQUÍ", history: "Tu biblioteca de historias", historyHint: "Pequeños mundos para volver a visitar. Tus últimas 20 creaciones, guardadas aquí.", emptyHistory: "Tu primera creación encontrará su lugar aquí.", blank: "Toda historia empieza con un poco de asombro.", blankHint: "Organiza tus símbolos, dales significado y deja que tu imaginación pase la página.", read: "Abrir vista de lectura", close: "Cerrar vista de lectura", done: "Terminar de editar", details: "Detalles de la creación", open: "Leer creación", waiting: "Un nuevo mundo está tomando forma…", failed: "Un capítulo por terminar", untitled: "Creación sin título" },
-};
+import { storyLabels } from "./story-labels";
+export { storyLabels } from "./story-labels";
 
 function Ornament({ className }: { className: string }) {
   return <svg className={className} viewBox="0 0 120 120" fill="none" aria-hidden="true">
@@ -29,7 +29,7 @@ function Ornament({ className }: { className: string }) {
 export function StorySymbols({ nodes, locale }: { nodes: BoardNode[]; locale: Locale }) {
   const symbols = [...new Map(nodes.map(node => [node.glyph, node])).values()];
   if (!symbols.length) return <span className="pg-story-flourish" aria-hidden="true">❦</span>;
-  return <div className="pg-story-symbols" role="img" aria-label={`${locale === "es" ? "Símbolos del lienzo" : "Canvas symbols"}: ${symbols.map(node => node.label).join(", ")}`}>
+  return <div className="pg-story-symbols" role="img" aria-label={`${locale === "es" ? "Símbolos del lienzo" : "Canvas symbols"}: ${symbols.map(node => nodeLabel(node,locale)).join(", ")}`}>
     <span className="pg-story-symbol-motif" aria-hidden="true">{symbols.slice(0, 5).map(node => <span key={node.id}><EmojiArtwork glyph={node.glyph}/></span>)}{symbols.length > 5 && <span className="pg-story-symbol-more">+{symbols.length - 5}</span>}</span>
   </div>;
 }
@@ -45,20 +45,21 @@ export function StoryContent({ run, locale, outputName, stale, onEdit, onCopy }:
   const t = playgroundLabels[locale], s = storyLabels[locale];
   const [editing, setEditing] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
+  useEffect(()=>setCopyStatus(""),[locale]);
   const effortNames: Record<ReasoningEffort, string> = { default: t.reasoningDefault, low: t.reasoningLow, medium: t.reasoningMedium, high: t.reasoningHigh };
   return <>
     <StoryPage>
       <span className="pg-story-kicker">{outputName}</span>
       <StorySymbols nodes={run.board.nodes} locale={locale}/>
-      <h3 className="pg-story-title">{creationTitle(run) || outputName}</h3>
+      <h3 className="pg-story-title" lang={run.settings.locale}>{creationTitle(run) || outputName}</h3>
       <div className="pg-story-divider" aria-hidden="true"><span>✧</span></div>
-      {run.result ? editing ? <label className="pg-story-editor">{t.outputEdit}<textarea autoFocus aria-label={t.outputEdit} maxLength={16000} value={run.result.text} onChange={e => onEdit(e.target.value)}/></label> : <div className="pg-story-prose" lang={run.settings.locale}>{run.result.text}</div> : <div className="pg-story-pending" role="status"><Feather size={30}/><p>{run.status === "running" ? s.waiting : s.failed}</p><small>{run.status === "running" ? t.generating : run.error || t.unknown}</small></div>}
+      {run.result ? editing ? <label className="pg-story-editor">{t.outputEdit}<textarea autoFocus lang={run.settings.locale} aria-label={t.outputEdit} maxLength={16000} value={run.result.text} onChange={e => onEdit(e.target.value)}/></label> : <div role="region" aria-label={outputName} tabIndex={0} className="pg-story-prose" lang={run.settings.locale}>{run.result.text}</div> : <div className="pg-story-pending" role="status"><Feather size={30}/><p>{run.status === "running" ? s.waiting : s.failed}</p><small>{run.status === "running" ? t.generating : generationErrorMessage(run,locale)}</small></div>}
       <span className="pg-story-end" aria-hidden="true">❧</span>
     </StoryPage>
     {stale && <p className="pg-stale pg-hint">{t.stale}</p>}
     {run.result && <div className="pg-story-actions"><button onClick={() => setEditing(!editing)}><Pencil size={14}/>{editing ? s.done : t.outputEdit}</button><button onClick={async () => setCopyStatus(await onCopy(run.result!.text) ? t.copied : t.copyFailed)}><Copy size={14}/>{t.copyOutput}</button></div>}
     {copyStatus && <p className="pg-story-copy-status" role="status">{copyStatus}</p>}
-    <details className="pg-story-details"><summary>{s.details}</summary><p>{new Date(run.createdAt).toLocaleString(locale)} · {run.result?.model || run.settings.model}{run.settings.reasoningEffort ? ` · ${effortNames[run.settings.reasoningEffort]}` : ""}</p>{run.result?.usage && <p>{run.result.usage.promptTokens} input / {run.result.usage.completionTokens} output tokens{run.result.usage.cost !== undefined ? ` · $${run.result.usage.cost.toFixed(6)}` : ""}</p>}<h4>{t.snapshot}</h4><pre>{run.brief.interpretation}</pre></details>
+    <details className="pg-story-details"><summary>{s.details}</summary><p>{new Date(run.createdAt).toLocaleString(locale)} · {run.result?.model || run.settings.model}{run.settings.reasoningEffort ? ` · ${effortNames[run.settings.reasoningEffort]}` : ""}</p>{run.result?.usage && <p>{s.inputTokens}: {run.result.usage.promptTokens.toLocaleString(locale)} · {s.outputTokens}: {run.result.usage.completionTokens.toLocaleString(locale)}{run.result.usage.cost !== undefined ? ` · ${s.cost}: ${new Intl.NumberFormat(locale,{style:"currency",currency:"USD",minimumFractionDigits:6,maximumFractionDigits:6}).format(run.result.usage.cost)}` : ""}</p>}<h4>{t.snapshot}</h4><pre lang={run.settings.locale}>{run.brief.interpretation}</pre></details>
   </>;
 }
 
@@ -80,7 +81,7 @@ export function StoryShelf({ runs, locale, outputNames, onOpen, onDelete, onUndo
       const title=creationTitle(run)||outputNames[run.settings.kind];
       return <article className="pg-history-card" key={run.id}>
         <div className="pg-history-meta"><span>{outputNames[run.settings.kind]}</span><span className="pg-history-meta-actions"><time dateTime={new Date(run.createdAt).toISOString()}>{new Date(run.createdAt).toLocaleDateString(locale,{month:"short",day:"numeric"})}</time><button className="pg-history-delete" aria-label={`${h.remove}: ${title}`} title={h.remove} onClick={()=>{deletedIndex.current=index;onDelete(run.id);}}><Trash2 size={14}/></button></span></div>
-        <button className="pg-history-read" onClick={()=>onOpen(run.id)} aria-label={`${s.open}: ${title}`}><span className="pg-history-title">{title}</span><span className="pg-history-excerpt">{run.result?.text || (run.status === "running" ? t.generating : run.error || t.unknown)}</span><span className="pg-history-footer"><span aria-hidden="true">{run.board.nodes.slice(0,5).map(n=>n.glyph).join(" ")}</span><span>{s.open} <span aria-hidden="true">↗</span></span></span></button>
+        <button className="pg-history-read" onClick={()=>onOpen(run.id)} aria-label={`${s.open}: ${title}`}><span className="pg-history-title" lang={run.settings.locale}>{title}</span><span className="pg-history-excerpt" lang={run.result?run.settings.locale:locale}>{run.result?.text || (run.status === "running" ? t.generating : generationErrorMessage(run,locale))}</span><span className="pg-history-footer"><span aria-hidden="true">{run.board.nodes.slice(0,5).map(n=>n.glyph).join(" ")}</span><span>{s.open} <span aria-hidden="true">↗</span></span></span></button>
       </article>;
     })}</div> : <div className="pg-shelf-empty"><Feather size={20}/><p>{s.emptyHistory}</p></div>}
     {runs.length>5&&<div className="pg-history-expansion"><button aria-expanded={expanded} aria-controls="pg-history-gallery" onClick={()=>setExpanded(!expanded)}>{expanded?h.fewer:`${h.all} (${runs.length})`}{expanded?<ChevronUp size={14}/>:<ChevronDown size={14}/>}</button></div>}

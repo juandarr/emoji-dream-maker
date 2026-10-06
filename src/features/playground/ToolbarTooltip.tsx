@@ -9,6 +9,7 @@ export default function ToolbarTooltip({label,shortcut,children,asChild=false}:{
   const [open,setOpen]=useState(false),[mac,setMac]=useState(false),[position,setPosition]=useState({left:0,top:0});
   useEffect(()=>{setMac(/Mac|iPhone|iPad/.test(navigator.platform));return()=>{if(timer.current)clearTimeout(timer.current);};},[]);
   function hide(){if(timer.current)clearTimeout(timer.current);timer.current=null;setOpen(false);}
+  function leave(){if(timer.current)clearTimeout(timer.current);timer.current=setTimeout(hide,150);}
   function show(immediate=false){if(timer.current)clearTimeout(timer.current);if(immediate)setOpen(true);else timer.current=setTimeout(()=>setOpen(true),450);}
   useLayoutEffect(()=>{
     if(!open||!anchor.current||!tooltip.current)return;
@@ -23,8 +24,8 @@ export default function ToolbarTooltip({label,shortcut,children,asChild=false}:{
     return()=>{window.removeEventListener("resize",hide);document.removeEventListener("scroll",hide,true);};
   },[open]);
   const container=open?(anchor.current?.closest(".pg-stage.is-fullscreen")??document.body):null;
-  const events:HTMLAttributes<HTMLElement>={onPointerEnter:e=>{if(e.pointerType!=="touch")show();},onPointerLeave:hide,onFocusCapture:e=>{if(e.target instanceof Element&&e.target.matches(":focus-visible"))show(true);},onBlurCapture:hide,onClickCapture:hide,onPointerDownCapture:hide,onKeyDownCapture:e=>{if(e.key==="Escape")hide();}};
+  const events:HTMLAttributes<HTMLElement>={onPointerEnter:e=>{if(e.pointerType!=="touch")show();},onPointerLeave:leave,onFocusCapture:e=>{if(e.target instanceof Element&&e.target.matches(":focus-visible"))show(true);},onBlurCapture:hide,onClickCapture:hide,onPointerDownCapture:hide,onKeyDownCapture:e=>{if(e.key==="Escape")hide();}};
   const description={"aria-describedby":open?[children.props["aria-describedby"],id].filter(Boolean).join(" "):children.props["aria-describedby"]};
   const trigger=asChild?cloneElement(children,{...events,...description,ref:el=>{anchor.current=el;}}):<span ref={el=>{anchor.current=el;}} className="pg-tooltip-trigger" {...events}>{cloneElement(children,description)}</span>;
-  return <>{trigger}{container&&createPortal(<div ref={tooltip} id={id} className="pg-toolbar-tooltip" role="tooltip" style={position}><span>{label}</span>{shortcut&&<kbd>{mac?"Cmd":"Ctrl"}+{shortcut}</kbd>}</div>,container)}</>;
+  return <>{trigger}{container&&createPortal(<div ref={tooltip} id={id} className="pg-toolbar-tooltip" role="tooltip" style={position} onPointerEnter={()=>show(true)} onPointerLeave={leave}><span>{label}</span>{shortcut&&<kbd>{mac?"Cmd":"Ctrl"}+{shortcut}</kbd>}</div>,container)}</>;
 }
