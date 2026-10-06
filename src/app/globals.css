@@ -254,7 +254,8 @@
 /* Playground: a stable white composition canvas inside the existing shell. */
 .nav-playground.active { background:#232d29!important;color:#bde1cf!important }
 .pg-add-from-discover { display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:12px;font-size:11px;color:#c8b3e9 }
-.section-playground { max-width:1900px;padding-bottom:40px }
+.section-playground { max-width:none;padding-bottom:40px }
+.section-playground > * { max-width:1210px;margin-inline:auto }
 .playground { --pg-border:#302b3d; padding-bottom:24px }
 .playground button:focus-visible,.playground textarea:focus-visible { outline:2px solid #bfa2fa;outline-offset:3px }
 .playground input,.playground select,.playground textarea { font:inherit;color:#eae8f2;background:#171620;border:1px solid var(--pg-border);border-radius:7px;padding:9px 10px;width:100%;min-width:0;font-size:12px }
@@ -371,3 +372,36 @@
 
 .pg-stage.resizing,.pg-stage.resizing * {cursor:var(--pg-resize-cursor,nwse-resize)!important}
 .pg-stage.rotating,.pg-stage.rotating * {cursor:grabbing!important}
+
+/* Discovery's saved views share one centered content column. */
+.section-favorites,.section-history {max-width:none}
+.section-favorites > :is(.intro,.saved-section,.storage-notice),
+.section-history > :is(.intro,.saved-section,.storage-notice) {width:min(100%,985px);margin-inline:auto}
+
+/* Favorites and History sit directly beneath Discover in the sidebar. */
+.discovery-menu {min-width:0;padding-bottom:10px;border-bottom:1px solid #24202c}
+.sidebar nav .nav-discover {width:100%}
+.nav-discover.in-section {color:#d2c4e5}
+.nav-discover .nav-group-chevron {margin-left:auto;color:#9d8bb0}
+.nav-discover .nav-active-dot {display:none}
+.discovery-subnav {display:flex;flex-direction:column;gap:3px;margin:2px 0 0 16px;padding-left:9px;border-left:1px solid #4c3a5a}
+.sidebar nav .discovery-subnav button {height:39px;padding:0 10px;gap:9px;font-size:12px}
+@media(max-width:920px) and (min-width:721px) {
+  .nav-discover .nav-group-chevron {display:none}
+  .discovery-subnav {margin-left:10px;padding-left:4px}
+  .sidebar nav .discovery-subnav button {width:36px;height:40px;padding:0;justify-content:center;gap:0;font-size:0}
+}
+@media(max-width:720px) {
+  .sidebar nav {align-items:flex-start;gap:8px}
+  .discovery-menu {flex:1;padding-bottom:0;border:0}
+  .sidebar nav .nav-discover {height:40px;padding:0 10px;justify-content:flex-start;gap:7px;font-size:11px}
+  .discovery-subnav {flex-direction:row;gap:3px;margin:0 0 0 12px;padding-left:8px}
+  .sidebar nav .discovery-subnav button {flex:1;width:auto;height:37px;padding:0 6px;justify-content:flex-start;gap:4px;font-size:10px}
+  .sidebar nav .discovery-subnav button svg {width:14px}
+  .sidebar nav .nav-playground {flex:0 0 auto;width:auto;height:40px;padding:0 10px}
+}
+@media(max-width:390px) {
+  .sidebar nav {flex-direction:column;align-items:stretch}
+  .discovery-menu,.sidebar nav .nav-playground {width:100%}
+  .sidebar nav .nav-playground {border-top:1px solid #24202c;justify-content:flex-start}
+}
