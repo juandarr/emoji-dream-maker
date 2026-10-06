@@ -8,6 +8,7 @@ describe("bilingual emoji discovery",()=>{
   it("finds a base emoji from a skin-tone variant",()=>{const hand=searchCatalog("👋🏽")[0];expect(hand.glyph).toBe("👋");expect(hand.variants.some(v=>v.glyph==="👋🏽")).toBe(true);});
   it("balances the initial page and honors category filtering",()=>{const first=searchCatalog("").slice(0,48);expect(new Set(first.map(e=>e.group)).size).toBe(categories.length);expect(searchCatalog("",3).every(e=>e.group===3)).toBe(true);});
   it("provides a literal love subject and labels landmark associations",()=>{expect(defaultTopic(searchCatalog("❤️")[0],"en").query).toBe("Love");expect(searchCatalog("paris")[0].association?.en).toContain("Tokyo Tower");});
+  it("does not match a query inside an unrelated country name",()=>{expect(searchCatalog("love").some(emoji=>emoji.labels.en==="flag: Slovenia")).toBe(false);});
   it("keeps every displayed emoji in a unique, stable position outside the portal",()=>{for(const query of ["","animal","heart","food"]){const items=searchCatalog(query).slice(0,48);const positions=constellationPositions(items);expect(positions).toEqual(constellationPositions(items));expect(new Set(positions.map(p=>`${p.x}:${p.y}`)).size).toBe(items.length);expect(positions.every(p=>Math.hypot(p.x-50,p.y-50)>26)).toBe(true);}});
   it("responds within the search budget",()=>{const start=performance.now();searchCatalog("ocean");expect(performance.now()-start).toBeLessThan(100);});
 });

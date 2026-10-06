@@ -23,6 +23,51 @@ async function stubSources(page:Page){
   });
 }
 test.beforeEach(async({page})=>{await stubSources(page);await page.goto("/");});
+test("Try a subject shows curated emojis and clears cleanly into search",async({page})=>{
+  await page.getByRole("button",{name:"Love",exact:true}).click();
+  await expect(page.locator(".canvas-toolbar")).toContainText("57 emojis to explore");
+  await expect(page.locator(".emoji-button")).toHaveCount(48);
+  await expect(page.getByLabel("red heart",{exact:true})).toBeVisible();
+  await expect(page.getByLabel("flag: Slovenia",{exact:true})).toHaveCount(0);
+  await page.getByRole("button",{name:"Next page"}).click();
+  await expect(page.locator(".emoji-button")).toHaveCount(9);
+  await expect(page.locator(".pagination")).toContainText("Page 2 / 2");
+  await page.getByRole("button",{name:"Sports",exact:true}).click();
+  await expect(page.locator(".canvas-toolbar")).toContainText("80 emojis to explore");
+  await expect(page.locator(".emoji-button")).toHaveCount(48);
+  await expect(page.locator(".pagination")).toContainText("Page 1 / 2");
+  await page.getByRole("button",{name:"All emojis",exact:true}).click();
+  await expect(page.locator(".emoji-button")).toHaveCount(48);
+  await page.getByRole("textbox",{name:/Search a word/}).fill("love");
+  await expect(page.getByLabel("flag: Slovenia",{exact:true})).toHaveCount(0);
+  await page.getByRole("button",{name:"Fish",exact:true}).click();
+  await expect(page.locator(".emoji-button")).toHaveCount(4);
+  await page.getByRole("textbox",{name:/Search a word/}).fill("octopus");
+  await expect(page.locator(".emoji-button")).toHaveCount(1);
+  await expect(page.getByRole("button",{name:"Fish",exact:true})).toHaveAttribute("aria-pressed","false");
+  await page.setViewportSize({width:320,height:700});
+  await page.getByLabel("Interface language").selectOption("es");
+  await page.getByRole("button",{name:"Herramientas",exact:true}).click();
+  await expect(page.locator(".emoji-button")).toHaveCount(18);
+  await expect(page.locator(".canvas-toolbar")).toContainText("27 emojis para explorar");
+  expect(await page.locator(".subject-grid button").evaluateAll(buttons=>buttons.every(button=>button.scrollWidth<=button.clientWidth))).toBe(true);
+});
+test("Discover stays centered and the canvas fits desktop and small screens",async({page})=>{
+  for(const [width,height,visible] of [[1440,900,48],[1024,768,48],[390,844,24],[320,700,18]]){
+    await page.setViewportSize({width,height});
+    await expect(page.locator(".emoji-button")).toHaveCount(visible);
+    const layout=await page.evaluate(()=>{
+      const canvas=document.querySelector(".dream-canvas")!.getBoundingClientRect();
+      const workspace=document.querySelector(".explorer-workspace")!.getBoundingClientRect();
+      const main=document.querySelector(".main-content")!.getBoundingClientRect();
+      return {bottom:canvas.bottom,square:Math.abs(canvas.width-canvas.height),offset:Math.abs((workspace.left+workspace.right-main.left-main.right)/2),overflow:document.documentElement.scrollWidth-innerWidth};
+    });
+    expect(layout.square).toBeLessThan(2);
+    expect(layout.offset).toBeLessThan(2);
+    expect(layout.overflow).toBeLessThanOrEqual(0);
+    expect(layout.bottom).toBeLessThanOrEqual(height+1);
+  }
+});
 test("bilingual search, keyboard reveal, favorites, history and persistence",async({page})=>{
   await page.getByRole("textbox",{name:/Search a word/}).fill("pulpo");
   const octopus=page.getByLabel("octopus",{exact:true});await expect(octopus).toBeVisible();await octopus.focus();await octopus.press("Enter");
@@ -631,6 +676,8 @@ test("YouTube iframe fullscreen after controls hide preserves the timeline and a
       }
       document.addEventListener('mousemove', reveal);
       document.addEventListener('keydown', event => {
+        // Keyboard navigation reveals YouTube-style controls before Tab moves focus.
+        if (event.key === 'Tab') reveal();
         if (event.key === 'f' && !event.repeat) {
           event.preventDefault();
           // Like YouTube's new embed, the controls are a sibling of the
