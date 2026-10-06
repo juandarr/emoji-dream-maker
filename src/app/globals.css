@@ -392,16 +392,20 @@
   .sidebar nav .discovery-subnav button {width:36px;height:40px;padding:0;justify-content:center;gap:0;font-size:0}
 }
 @media(max-width:720px) {
-  .sidebar nav {align-items:flex-start;gap:8px}
-  .discovery-menu {flex:1;padding-bottom:0;border:0}
-  .sidebar nav .nav-discover {height:40px;padding:0 10px;justify-content:flex-start;gap:7px;font-size:11px}
-  .discovery-subnav {flex-direction:row;gap:3px;margin:0 0 0 12px;padding-left:8px}
-  .sidebar nav .discovery-subnav button {flex:1;width:auto;height:37px;padding:0 6px;justify-content:flex-start;gap:4px;font-size:10px}
-  .sidebar nav .discovery-subnav button svg {width:14px}
-  .sidebar nav .nav-playground {flex:0 0 auto;width:auto;height:40px;padding:0 10px}
+  .sidebar nav {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:8px;row-gap:0;align-items:stretch;width:100%}
+  .discovery-menu {display:contents}
+  .sidebar nav .nav-discover,.sidebar nav .nav-playground {width:100%;min-width:0;height:44px;padding:0 12px;justify-content:center;gap:8px;font-size:12px;font-weight:600;background:#181720;border:1px solid #302b3b}
+  .sidebar nav .nav-discover {grid-column:1;grid-row:1}
+  .sidebar nav .nav-playground {grid-column:2;grid-row:1}
+  .sidebar nav .nav-discover.active,.sidebar nav .nav-discover.in-section {border-color:#4b3c60}
+  .sidebar nav .nav-discover.in-section {background:#211b2b;color:#d2c4e5}
+  .sidebar nav .nav-playground.active {border-color:#4b685b}
+  .nav-discover .nav-group-chevron {margin-left:0;width:13px}
+  .discovery-subnav {grid-column:1/-1;grid-row:2;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:7px 0 0 12px;padding:6px 8px 7px 12px;border-left:2px solid #584568;border-radius:0 0 8px 8px;background:#15131c}
+  .sidebar nav .discovery-subnav button {width:100%;min-width:0;height:44px;padding:0 10px;justify-content:flex-start;gap:8px;font-size:11px;font-weight:400;color:#b9afc3}
+  .sidebar nav .discovery-subnav button svg {width:15px}
 }
 @media(max-width:390px) {
-  .sidebar nav {flex-direction:column;align-items:stretch}
-  .discovery-menu,.sidebar nav .nav-playground {width:100%}
-  .sidebar nav .nav-playground {border-top:1px solid #24202c;justify-content:flex-start}
+  .sidebar nav .nav-discover,.sidebar nav .nav-playground {padding:0 7px;gap:6px;font-size:11px}
+  .sidebar nav .discovery-subnav button {padding:0 6px;font-size:10px}
 }
