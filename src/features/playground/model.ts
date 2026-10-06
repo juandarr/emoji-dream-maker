@@ -1,9 +1,10 @@
 import { defaultTopic } from "@/lib/catalog";
 import type { EmojiRecord, Locale } from "@/lib/types";
+import { nodeMeaning } from "./localization";
 
 export const NODE_LIMIT = 80;
 export type BoardNode = {
-  id: string; emojiId: string; glyph: string; label: string; meaning: string;
+  id: string; emojiId: string; glyph: string; label: string; meaning: string; customMeaning?: boolean;
   note: string; role: "subject" | "setting" | "mood"; x: number; y: number; scale:number; rotation:number;
 };
 export type BoardEdge = { id: string; source: string; target: string; label: string };
@@ -25,7 +26,7 @@ export function parseComposition(value: unknown): Composition {
   const nodes: BoardNode[] = value.nodes.map(n => {
     if (!object(n) || !id(n.id) || !id(n.emojiId) || !str(n.glyph, 40, true) || !str(n.label, 150, true) || !str(n.meaning, 150, true) || !str(n.note, 500) || !["subject", "setting", "mood"].includes(String(n.role)) || typeof n.x !== "number" || !Number.isFinite(n.x) || Math.abs(n.x) > 100000 || typeof n.y !== "number" || !Number.isFinite(n.y) || Math.abs(n.y) > 100000) throw new Error("Invalid emoji instance.");
     if(n.scale!==undefined&&(typeof n.scale!=="number"||!Number.isFinite(n.scale)||n.scale<.2||n.scale>12)||n.rotation!==undefined&&(typeof n.rotation!=="number"||!Number.isFinite(n.rotation)||Math.abs(n.rotation)>360000))throw new Error("Invalid emoji transform.");
-    return { scale:n.scale===undefined?1:n.scale as number, rotation:n.rotation===undefined?0:((n.rotation as number)%360+360)%360, id:n.id, emojiId:n.emojiId, glyph:n.glyph, label:n.label, meaning:n.meaning, note:n.note, role:n.role as BoardNode["role"], x:n.x, y:n.y };
+    return { scale:n.scale===undefined?1:n.scale as number, rotation:n.rotation===undefined?0:((n.rotation as number)%360+360)%360, id:n.id, emojiId:n.emojiId, glyph:n.glyph, label:n.label, meaning:n.meaning, ...(n.customMeaning===true?{customMeaning:true}:{}), note:n.note, role:n.role as BoardNode["role"], x:n.x, y:n.y };
   });
   const ids = new Set(nodes.map(n => n.id));
   if (ids.size !== nodes.length) throw new Error("Duplicate emoji instance IDs.");
@@ -83,6 +84,7 @@ export function boardReducer(state:BoardHistory,action:BoardAction): BoardHistor
   return JSON.stringify(board)===JSON.stringify(next)?state:{past:[...state.past,board].slice(-50),present:next,future:[]};
 }
 export function compileBrief(board:Composition,locale:Locale) {
+  board={...board,nodes:board.nodes.map(node=>({...node,meaning:nodeMeaning(node,locale)}))};
   const entities=board.nodes.map(({id,glyph,meaning,note,role})=>({id,glyph,meaning,note,role})).sort((a,b)=>a.id.localeCompare(b.id));
   // Keep the author's arrangement alongside their words, including repeated symbols.
   // These are world coordinates: zooming and panning do not change the story input.

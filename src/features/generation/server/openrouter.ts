@@ -41,15 +41,16 @@ export const openRouterGenerator:GeneratorAdapter={
     if(!response.ok) {
       await response.body?.cancel().catch(()=>{});
       const messages:Record<number,string>={401:"OpenRouter rejected the API key. Update OPENROUTER_API_KEY and restart the server.",402:"OpenRouter needs credits or a higher key budget.",403:"OpenRouter blocked this request. Check your key permissions and provider settings.",429:"OpenRouter is busy or rate-limited. Wait before generating again.",404:"The selected model or a provider supporting these settings is unavailable. Choose another model or use its default reasoning effort.",400:"OpenRouter rejected these model settings. Choose a supported reasoning effort or try the model default."};
-      throw new GenerationError("provider",502,messages[response.status]||"OpenRouter could not complete the request. Check the selected model and your provider settings.");
+      const codes:Record<number,string>={401:"auth",402:"credits",403:"permissions",429:"rateLimit",404:"model",400:"settings"};
+      throw new GenerationError(codes[response.status]||"provider",502,messages[response.status]||"OpenRouter could not complete the request. Check the selected model and your provider settings.");
     }
     let data;
     try { data=JSON.parse(await boundedText(response,128000)); }
-    catch {throw new GenerationError("unknown",502,"OpenRouter returned an unreadable response. Check your activity before trying again.");}
+    catch {throw new GenerationError("unreadable",502,"OpenRouter returned an unreadable response. Check your activity before trying again.");}
     if(data.error)throw new GenerationError("provider",502,"OpenRouter reported a generation error. Check your model availability and provider settings.");
     const content=data.choices?.[0]?.message?.content;
     const text=typeof content==="string"?content:Array.isArray(content)?content.filter(c=>c?.type==="text"&&typeof c.text==="string").map(c=>c.text).join("\n"):"";
-    if(!text.trim())throw new GenerationError("provider",502,data.choices?.[0]?.finish_reason==="length"?"The model used the completion budget before producing an answer. Lower the reasoning effort or increase OPENROUTER_MAX_COMPLETION_TOKENS in .env.local, then restart the server.":"The model returned no text. Try another configured text model.");
+    if(!text.trim())throw new GenerationError(data.choices?.[0]?.finish_reason==="length"?"budget":"empty",502,data.choices?.[0]?.finish_reason==="length"?"The model used the completion budget before producing an answer. Lower the reasoning effort or increase OPENROUTER_MAX_COMPLETION_TOKENS in .env.local, then restart the server.":"The model returned no text. Try another configured text model.");
     // A single provider call creates both the title and body. Models that return
     // plain text still get a useful title from the author's chosen concepts.
     const contentText=text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
@@ -59,7 +60,7 @@ export const openRouterGenerator:GeneratorAdapter={
         const output=JSON.parse(contentText);
         if(typeof output.text!=="string"||!output.text.trim()||typeof output.title!=="string")throw new Error();
         body=output.text;generatedTitle=output.title.trim().slice(0,120);
-      } catch {throw new GenerationError("provider",502,"The model returned an incomplete creation. Try another configured text model.");}
+      } catch {throw new GenerationError("incomplete",502,"The model returned an incomplete creation. Try another configured text model.");}
     }
     if(settings.kind==="interpretation")body=body.trim().replace(/\s*\n+\s*/g," ");
     const fallback=board.nodes.slice(0,2).map(node=>node.meaning).join(settings.locale==="es"?" y ":" & ").slice(0,120);

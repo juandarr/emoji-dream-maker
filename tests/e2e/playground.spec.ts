@@ -60,8 +60,8 @@ test("generation uses editable input, keeps results through tab changes and mark
 });
 test("connection and provider failures preserve the authored board",async({page})=>{
   await open(page);await add(page,"ocean","water wave");
-  await page.route("**/api/generations",route=>route.request().method()==="GET"?route.fulfill({json:{configured:false,models:["test/text"],maxOutputTokens:800}}):route.fulfill({status:502,json:{error:"OpenRouter needs credits.",code:"provider"}}));
-  await page.getByRole("button",{name:"Generate",exact:true}).click();await expect(page.locator(".pg-generation-status")).toContainText("OpenRouter needs credits.");await expect(page.locator(".pg-node")).toHaveCount(1);
+  await page.route("**/api/generations",route=>route.request().method()==="GET"?route.fulfill({json:{configured:false,models:["test/text"],maxOutputTokens:800}}):route.fulfill({status:502,json:{error:"OpenRouter needs credits or a higher key budget.",code:"credits"}}));
+  await page.getByRole("button",{name:"Generate",exact:true}).click();await expect(page.locator(".pg-generation-status")).toContainText("OpenRouter needs credits or a higher key budget.");await expect(page.locator(".pg-node")).toHaveCount(1);
   await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.getByRole("button",{name:"Generate",exact:true})).toBeDisabled();await expect(page.locator(".pg-header-issue").filter({hasText:/To connect OpenRouter/})).toBeVisible();await expect(page.locator(".pg-node")).toHaveCount(1);
 });
 test("phone tap flow and Spanish meanings have no horizontal overflow",async({page})=>{
@@ -109,9 +109,9 @@ test("object clicks toggle selection; dragging stays unselected and deletes undo
   await node.click();await expect(node).toHaveAttribute("aria-pressed","false");
   await node.click();await page.keyboard.press("Escape");await expect(node).toHaveAttribute("aria-pressed","false");
   await node.click();await page.locator(".pg-board").click({position:{x:15,y:15}});await expect(node).toHaveAttribute("aria-pressed","false");await expect(page.getByRole("button",{name:"Delete selected object"})).toHaveCount(0);
-  // Keyboard focus remains functional without the dashed oval or button outline.
+  // Keyboard users get a visible focus ring while the artwork stays undecorated.
   await page.keyboard.press("Tab");await node.focus();expect(await node.evaluate(el=>el.matches(":focus-visible"))).toBe(true);
-  await expect(node).toHaveCSS("outline-style","none");await expect(node.locator(":scope > span")).toHaveCSS("outline-style","none");
+  await expect(node).toHaveCSS("outline-style","solid");await expect(node.locator(":scope > span")).toHaveCSS("outline-style","none");
   await page.keyboard.press("Enter");await expect(node).toHaveAttribute("aria-pressed","true");await page.keyboard.press("Space");await expect(node).toHaveAttribute("aria-pressed","false");
   const before=await node.getAttribute("style"),box=await node.boundingBox();
   await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);await page.mouse.down();await page.mouse.move(box!.x+box!.width/2+100,box!.y+box!.height/2+80,{steps:8});

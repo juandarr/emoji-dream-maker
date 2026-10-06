@@ -5,6 +5,7 @@ import {useDroppable} from "@dnd-kit/core";
 import {Copy,Expand,Minimize,Plus,Scan,MousePointer2,MoveDiagonal2,RotateCw,Trash2,X,ZoomIn,ZoomOut} from "lucide-react";
 import {type ArrangeDirection,type BoardNode,type Composition} from "./model";
 import {playgroundLabels} from "./labels";
+import {nodeMeaning} from "./localization";
 import EmojiArtwork from "./emoji-artwork";
 import type {Locale} from "@/lib/types";
 import {boundedZoom,fitCamera,resizeCamera,steppedZoom,GLYPH_SIZE,MAX_ZOOM,MIN_ZOOM,worldPoint,zoomAt,type Camera,type Point} from "./camera";
@@ -37,7 +38,7 @@ export default function Canvas({onUndo,onRedo,onReset,notice,onCopyEvent,onPaste
   const fullscreenRef=useRef(false),previousFullscreen=useRef(false),embeddedView=useRef<{camera:Camera;size:{width:number;height:number};reference:number}|null>(null),fitActive=useRef(false);
   const fitRef=useRef<()=>void>(()=>{});
   fullscreenRef.current=fullscreen;
-  useEffect(()=>{setViewNotice("");},[notice]);
+  useEffect(()=>{setViewNotice("");},[notice,locale]);
   const pan=useRef<{id:number;start:Point;camera:Camera;moved:boolean;selecting:boolean;additive:boolean;selection:string[]}|null>(null);
   const gesture=useRef<ObjectGesture|null>(null);
   const [preview,setPreview]=useState<BoardNode[]|null>(null),[area,setArea]=useState<Bounds|null>(null),[selectMode,setSelectMode]=useState(false),[shiftPressed,setShiftPressed]=useState(false);
@@ -255,7 +256,7 @@ export default function Canvas({onUndo,onRedo,onReset,notice,onCopyEvent,onPaste
         <ToolbarTooltip label={fullscreen?t.exitFullscreenHint:t.fullscreenHint}><button aria-label={fullscreen?t.exitFullscreen:t.fullscreen} onClick={()=>void toggleFullscreen()}>{fullscreen?<Minimize size={17}/>:<Expand size={17}/>}</button></ToolbarTooltip>
       </div>
     </div>
-    <div ref={el=>{setNodeRef(el);boardRef.current=el;}} role="region" aria-label={t.canvas} tabIndex={0} data-shapes-ready={board.nodes.every(n=>shapes.has(n.glyph))} className={`pg-board ${dragReady?"drag-ready":""} ${isOver?"over":""} ${panning?"panning":""} ${selectMode?"select-mode":""} ${shiftPressed?"shift-select":""}`} onPointerEnter={e=>setShiftPressed(e.shiftKey)} onPointerLeave={()=>setDragReady(false)} onPointerDown={e=>{
+    <div ref={el=>{setNodeRef(el);boardRef.current=el;}} role="region" aria-label={t.canvas} aria-describedby="pg-canvas-keyboard-hint" tabIndex={0} data-shapes-ready={board.nodes.every(n=>shapes.has(n.glyph))} className={`pg-board ${dragReady?"drag-ready":""} ${isOver?"over":""} ${panning?"panning":""} ${selectMode?"select-mode":""} ${shiftPressed?"shift-select":""}`} onPointerEnter={e=>setShiftPressed(e.shiftKey)} onPointerLeave={()=>setDragReady(false)} onPointerDown={e=>{
       if(e.button!==0||!e.isPrimary||gesture.current)return;
       const p=point({x:e.clientX,y:e.clientY}),node=hitObject(p,e.pointerType);
       if(node){startObject(e,node,"move");return;}
@@ -282,7 +283,7 @@ export default function Canvas({onUndo,onRedo,onReset,notice,onCopyEvent,onPaste
       {/* Render at display size: scaling a cached composited layer can blur even vector artwork. */}
       <div className="pg-world" style={{width:world.width*camera.zoom,height:world.height*camera.zoom,transform:`translate(${camera.x}px, ${camera.y}px)`}}>
         <svg className="pg-edges" aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><marker id="pg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a68cf4"/></marker></defs>{board.edges.map(e=>{const a=nodes.find(n=>n.id===e.source)!,b=nodes.find(n=>n.id===e.target)!;return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#b9a4e0" strokeWidth=".35" markerEnd="url(#pg-arrow)"/>;})}</svg>
-        {nodes.map((node,index)=><button key={node.id} data-id={node.id} data-glyph={node.glyph} data-scale={node.scale} data-rotation={node.rotation} className={`pg-node ${selectedIds.includes(node.id)?"selected":""} ${objectDragging&&preview?.some(p=>p.id===node.id)?"dragging":""}`} aria-label={`${node.glyph} ${node.meaning}`} aria-pressed={selectedIds.includes(node.id)} style={{zIndex:index+1,width:60*camera.zoom*node.scale,height:60*camera.zoom*node.scale,left:`${node.x}%`,top:`${node.y}%`,transform:`translate(-50%, -50%) rotate(${node.rotation}deg)`}}
+        {nodes.map((node,index)=><button key={node.id} data-id={node.id} data-glyph={node.glyph} data-scale={node.scale} data-rotation={node.rotation} className={`pg-node ${selectedIds.includes(node.id)?"selected":""} ${objectDragging&&preview?.some(p=>p.id===node.id)?"dragging":""}`} aria-label={`${node.glyph} ${nodeMeaning(node,locale)}`} aria-pressed={selectedIds.includes(node.id)} style={{zIndex:index+1,width:60*camera.zoom*node.scale,height:60*camera.zoom*node.scale,left:`${node.x}%`,top:`${node.y}%`,transform:`translate(-50%, -50%) rotate(${node.rotation}deg)`}}
           onClick={e=>{if(e.detail===0)selectObject(node.id,e.shiftKey);}}
           onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();selectObject(node.id,e.shiftKey);}else if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){e.preventDefault();const group=selectedIds.includes(node.id)?selected:[node];onTransform(transformNodes(group,world,{x:0,y:0},{dx:e.key==="ArrowRight"?world.width*.02:e.key==="ArrowLeft"?-world.width*.02:0,dy:e.key==="ArrowDown"?world.height*.02:e.key==="ArrowUp"?-world.height*.02:0}));}}}>
           <span style={{fontSize:GLYPH_SIZE*camera.zoom*node.scale}}><EmojiArtwork glyph={node.glyph}/></span>

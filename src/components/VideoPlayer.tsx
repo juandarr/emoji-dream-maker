@@ -123,6 +123,7 @@ export default function VideoPlayer({ item, locale, onClose }: { item: MediaItem
       if (!event.altKey && !event.ctrlKey && !event.metaKey && !target.closest("input, textarea, select, [contenteditable='true']")) {
         const key = event.key.toLowerCase();
         if (event.code === "Space" || event.key === " " || key === "k") {
+          if (key!=="k" && target.closest("button, a[href], summary")) return;
           event.preventDefault();
           if (!event.repeat) togglePlayback();
           return;
@@ -154,7 +155,7 @@ export default function VideoPlayer({ item, locale, onClose }: { item: MediaItem
         }
       }
       if (event.key !== "Tab") return;
-      const elements = event.currentTarget.querySelectorAll<HTMLElement>("button, iframe, a[href]");
+      const elements = event.currentTarget.querySelectorAll<HTMLElement>("button:not([disabled]), iframe, a[href], [tabindex='0']");
       const first = elements[0], last = elements[elements.length - 1];
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }

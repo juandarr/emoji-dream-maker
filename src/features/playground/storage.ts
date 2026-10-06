@@ -62,6 +62,7 @@ export function restoreRuns(value:unknown):GenerationRun[] {
       const restored:GenerationRun={id:run.id,identity,createdAt:run.createdAt,board,brief,settings:{kind:settings.kind,locale:settings.locale,tone:settings.tone,model:settings.model,...(settings.reasoningEffort?{reasoningEffort:settings.reasoningEffort}:{})},status:run.status=== "running"?"unknown":run.status};
       if(run.result)restored.result={text:run.result.text,...(typeof run.result.title==="string"&&run.result.title.trim()?{title:run.result.title.slice(0,120)}:{}),model:run.result.model,provider:"openrouter",generationId:typeof run.result.generationId==="string"?run.result.generationId.slice(0,200):undefined,usage:usage&&Number.isFinite(usage.promptTokens)&&Number.isFinite(usage.completionTokens)?{promptTokens:usage.promptTokens,completionTokens:usage.completionTokens,...(Number.isFinite(usage.cost)?{cost:usage.cost}:{})}:undefined};
       restored.error=run.status==="running"?"The request was interrupted. Its provider outcome is unknown; it will not be retried automatically.":typeof run.error==="string"?run.error.slice(0,1000):undefined;
+      restored.errorCode=run.status==="running"?"interrupted":typeof run.errorCode==="string"?run.errorCode.slice(0,50):undefined;
       result.push(restored);
     } catch { /* Preserve the board even if a saved request snapshot is damaged. */ }
   }

@@ -139,8 +139,8 @@ test('Fit enlarges small objects; three dropdowns preserve search, source select
  await expect(page.getByLabel('Subjects',{exact:true})).toHaveValue('ocean');await expect(page.getByLabel('Sort emojis',{exact:true})).toHaveValue('unicode');
  await page.getByLabel('Search emojis in English or Spanish').fill('');await page.getByLabel('Category',{exact:true}).selectOption('3');await expect(page.getByLabel('Subjects',{exact:true})).toHaveValue('all');
  const codePoints=await page.locator('.pg-palette .pg-vector-glyph').evaluateAll(elements=>elements.map(e=>e.textContent!.codePointAt(0)!));expect(codePoints).toEqual([...codePoints].sort((a,b)=>a-b));
- await expect(page.getByRole('button',{name:'Next emojis',exact:true})).toBeEnabled();await page.getByRole('button',{name:'Next emojis',exact:true}).click();await expect(page.locator('.pg-paging')).toContainText('2/');
- await page.getByLabel('Sort emojis',{exact:true}).selectOption('alphabetical');await expect(page.locator('.pg-paging')).toContainText('1/');
+ await expect(page.getByRole('button',{name:'Next emojis',exact:true})).toBeEnabled();await page.getByRole('button',{name:'Next emojis',exact:true}).click();await expect(page.locator('.pg-paging')).toContainText('Page 2 of');
+ await page.getByLabel('Sort emojis',{exact:true}).selectOption('alphabetical');await expect(page.locator('.pg-paging')).toContainText('Page 1 of');
  await picker.screenshot({path:'/tmp/playground-dropdowns-fixed.png'});
 });
 

@@ -14,7 +14,7 @@ export const initialPickerState:PickerState={query:"",category:null,sort:"releva
 function PaletteEmoji({emoji,locale,onAdd,disabled}:{emoji:EmojiRecord;locale:Locale;onAdd:()=>void;disabled:boolean}){
   const {setNodeRef,attributes,listeners,isDragging}=useDraggable({id:`tray:${emoji.id}`,disabled});
   const t=playgroundLabels[locale];
-  return <button ref={setNodeRef} {...attributes} {...listeners} disabled={disabled} onClick={onAdd} aria-label={`${t.add} ${emoji.labels[locale]}`} title={emoji.labels[locale]} className={`pg-palette-emoji ${isDragging?"dragging":""}`}><span><EmojiArtwork glyph={emoji.glyph}/></span><small>{emoji.labels[locale]}</small></button>;
+  return <button ref={setNodeRef} {...attributes} {...listeners} disabled={disabled} onKeyDown={event=>{if(event.key==="Enter"){event.preventDefault();onAdd();}else listeners?.onKeyDown?.(event);}} onClick={onAdd} aria-label={`${t.add} ${emoji.labels[locale]}`} title={emoji.labels[locale]} className={`pg-palette-emoji ${isDragging?"dragging":""}`}><span><EmojiArtwork glyph={emoji.glyph}/></span><small>{emoji.labels[locale]}</small></button>;
 }
 export default function EmojiPicker({locale,state,onChange,onAdd,disabled,sceneEmojiIds}:{locale:Locale;state:PickerState;onChange:(state:PickerState)=>void;onAdd:(emoji:EmojiRecord)=>void;disabled:boolean;sceneEmojiIds:string[]}){
   const t=playgroundLabels[locale],{query,category,sort,page,subject}=state;
@@ -50,6 +50,6 @@ export default function EmojiPicker({locale,state,onChange,onAdd,disabled,sceneE
     <div id="pg-picker-results" className="pg-picker-results">
       <div className="pg-palette">{visible.map(emoji=><PaletteEmoji key={emoji.id} emoji={emoji} locale={locale} onAdd={()=>onAdd(emoji)} disabled={disabled}/>)}{!visible.length&&<p role="status">{t.noMatches}</p>}</div>
     </div>
-    <div className="pg-paging"><span aria-live="polite">{matches.length} · {currentPage+1}/{pages}</span><div><button aria-label={t.previous} disabled={currentPage===0} onClick={()=>onChange({...state,page:currentPage-1})}><ChevronLeft size={17}/></button><button aria-label={t.next} disabled={currentPage===pages-1} onClick={()=>onChange({...state,page:currentPage+1})}><ChevronRight size={17}/></button></div></div>
+    <div className="pg-paging"><span aria-live="polite">{(matches.length===1?t.pickerCountOne:t.pickerCount).replace("{count}",matches.length.toLocaleString(locale)).replace("{page}",String(currentPage+1)).replace("{pages}",String(pages))}</span><div><button aria-label={t.previous} disabled={currentPage===0} onClick={()=>onChange({...state,page:currentPage-1})}><ChevronLeft size={17}/></button><button aria-label={t.next} disabled={currentPage===pages-1} onClick={()=>onChange({...state,page:currentPage+1})}><ChevronRight size={17}/></button></div></div>
   </>;
 }
