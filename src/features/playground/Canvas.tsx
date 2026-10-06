@@ -198,6 +198,9 @@ export default function Canvas({onUndo,onRedo,onReset,notice,onCopyEvent,onPaste
   function zoomButton(direction:1|-1) {fitActive.current=false;setViewNotice("");setCamera(c=>zoomAt(c,{x:size.width/2,y:size.height/2},zoomReference*steppedZoom(c.zoom/zoomReference,direction)));}
   function fit() {fitActive.current=true;const b=paintedBounds(board.nodes,world,shapes),fitted=fitCamera(b?[{x:b.left,y:b.top},{x:b.right,y:b.bottom}]:[],size.width,size.height);reference(fitted.zoom);setCamera(fitted);setViewNotice(board.nodes.length?t.fitDone:"");}
   fitRef.current=fit;
+  // Fit can follow font loading and viewport changes, but editing must keep the
+  // current camera: measuring newly added artwork must not move the drop point.
+  useEffect(()=>{fitActive.current=false;},[board.nodes]);
   useEffect(()=>{if(fitActive.current)fitRef.current();},[shapes,size]);
   useEffect(()=>{if(layersOpen){const panel=stageRef.current?.querySelector<HTMLElement>(".pg-layers");(panel?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')||panel?.querySelector<HTMLButtonElement>("button"))?.focus({preventScroll:true});}},[layersOpen]);
   function closeLayers(){setLayersOpen(false);stageRef.current?.querySelector<HTMLButtonElement>('[aria-controls="pg-layers"]')?.focus();}
@@ -242,7 +245,9 @@ export default function Canvas({onUndo,onRedo,onReset,notice,onCopyEvent,onPaste
       if(fullscreen&&e.key==="Tab") {const focusable=Array.from(stageRef.current!.querySelectorAll<HTMLElement>('button:not(:disabled),input,select,summary,[tabindex="0"]')).filter(el=>el.tabIndex>=0&&el.getClientRects().length);const first=focusable[0],last=focusable.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}
     }}>
     <div ref={toolbarRef} className="pg-space-toolbar">
-      {!!board.nodes.length&&<ToolbarTooltip label={t.addEmojiHint}><button ref={pickerButton} className="pg-picker-toggle" aria-label={t.openPicker} aria-expanded={pickerOpen} onClick={()=>setPickerOpen(!pickerOpen)}><Plus size={17}/><span>{t.addEmoji}</span></button></ToolbarTooltip>}
+      {/* Reserve the populated toolbar's space so the first drop cannot wrap
+          controls and resize/zoom the canvas underneath the released pointer. */}
+      <div style={{visibility:board.nodes.length?undefined:"hidden"}} aria-hidden={!board.nodes.length}><ToolbarTooltip label={t.addEmojiHint}><button ref={board.nodes.length?pickerButton:undefined} disabled={!board.nodes.length} className="pg-picker-toggle" aria-label={t.openPicker} aria-expanded={pickerOpen} onClick={()=>setPickerOpen(!pickerOpen)}><Plus size={17}/><span>{t.addEmoji}</span></button></ToolbarTooltip></div>
       <div className="pg-space-history">{toolbar}</div>
       <CanvasActions nodes={board.nodes} selectedIds={selectedIds} locale={locale} onCopy={onCopy} onPaste={onPaste} canPaste={canPaste} onArrange={onArrange} layersOpen={layersOpen} onLayers={()=>{setLayersOpen(!layersOpen);setPickerOpen(false);}}/>
       <div className="pg-view-tools">

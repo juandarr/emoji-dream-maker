@@ -50,7 +50,7 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
   const [runs,setRuns]=useState<GenerationRun[]>([]),[busy,setBusy]=useState(false),[config,setConfig]=useState<GenerationConfig|null>(null),[configFailed,setConfigFailed]=useState(false);
   const [reasoningEffort,setReasoningEffort]=useState<ReasoningEffort>("default"),[pendingResultId,setPendingResultId]=useState<string|null>(null);
   const [pickerOpen,setPickerOpen]=useState(false);
-  const clipboardRef=useRef<SelectionClipboard|null>(null),pasteCount=useRef(0),cursorRef=useRef<Point|null>(null);
+  const clipboardRef=useRef<SelectionClipboard|null>(null),pasteCount=useRef(0),cursorRef=useRef<Point|null>(null),dragPointRef=useRef<Point|null>(null);
   const [canPaste,setCanPaste]=useState(false),[canvasNotice,setCanvasNotice]=useState("");
   const latestBoard=useRef(board);latestBoard.current=board;
   const geometryRef=useRef<CanvasGeometry>({camera:{x:0,y:0,zoom:1},width:600,height:500});
@@ -83,11 +83,11 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
     window.addEventListener("keydown",deselect);return()=>window.removeEventListener("keydown",deselect);
   },[]);
   useEffect(()=>{
-    const track=(event:PointerEvent)=>{cursorRef.current=event.pointerType==="touch"?null:{x:event.clientX,y:event.clientY};};
+    const track=(event:PointerEvent)=>{const point={x:event.clientX,y:event.clientY};dragPointRef.current=point;cursorRef.current=event.pointerType==="touch"?null:point;};
     const clear=()=>{cursorRef.current=null;};
     const leave=(event:PointerEvent)=>{if(!event.relatedTarget)clear();};
-    document.addEventListener("pointermove",track,true);document.addEventListener("pointerdown",track,true);document.addEventListener("pointerout",leave);window.addEventListener("blur",clear);
-    return()=>{document.removeEventListener("pointermove",track,true);document.removeEventListener("pointerdown",track,true);document.removeEventListener("pointerout",leave);window.removeEventListener("blur",clear);};
+    document.addEventListener("pointermove",track,true);document.addEventListener("pointerdown",track,true);document.addEventListener("pointerup",track,true);document.addEventListener("pointerout",leave);window.addEventListener("blur",clear);
+    return()=>{document.removeEventListener("pointermove",track,true);document.removeEventListener("pointerdown",track,true);document.removeEventListener("pointerup",track,true);document.removeEventListener("pointerout",leave);window.removeEventListener("blur",clear);};
   },[]);
   const add=useCallback((emoji:EmojiRecord,position?:{x:number;y:number},glyph?:string)=>{
     if(board.nodes.length>=NODE_LIMIT){setNotice(t.limit);return;}
@@ -146,7 +146,15 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
     const id=String(event.active.id);
     if(id.startsWith("tray:")&&event.over?.id==="composition-board"){
       const emoji=emojiById.get(id.slice(5)),translated=event.active.rect.current.translated;
-      if(emoji&&translated){const geometry=geometryRef.current;const start=event.activatorEvent;const origin=start instanceof MouseEvent?start:"touches" in start?(start as TouchEvent).touches[0]:null;const drop=origin?{x:origin.clientX+event.delta.x,y:origin.clientY+event.delta.y}:{x:translated.left+translated.width/2,y:translated.top+translated.height/2};const point=worldPoint({x:drop.x-rect.left,y:drop.y-rect.top},geometry.camera);add(emoji,{x:point.x/geometry.width*100,y:point.y/geometry.height*100});}
+      if(emoji&&translated){
+        const geometry=geometryRef.current,start=event.activatorEvent;
+        const origin=start instanceof MouseEvent?start:"touches" in start?(start as TouchEvent).touches[0]:null;
+        // Dnd-kit deltas also include scroll movement. Use the actual release
+        // coordinates for mouse/touch; keyboard drags use the translated item.
+        const drop=origin?(dragPointRef.current??{x:origin.clientX+event.delta.x,y:origin.clientY+event.delta.y}):{x:translated.left+translated.width/2,y:translated.top+translated.height/2};
+        const point=worldPoint({x:drop.x-rect.left,y:drop.y-rect.top},geometry.camera);
+        add(emoji,{x:point.x/geometry.width*100,y:point.y/geometry.height*100});
+      }
     }
   }
   async function copy(text:string) {try{await navigator.clipboard.writeText(text);setNotice(t.copied);return true;}catch{setNotice(t.copyFailed);return false;}}

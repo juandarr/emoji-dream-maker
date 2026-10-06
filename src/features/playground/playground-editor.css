@@ -9,7 +9,6 @@
 .pg-arrange summary{display:flex;align-items:center;gap:3px;min-height:32px;padding:6px 7px;border-radius:7px;font-size:11px;cursor:pointer;list-style:none}
 .pg-arrange summary::-webkit-details-marker{display:none}
 .pg-arrange summary:hover,.pg-arrange[open] summary{background:#eee5f9}
-.pg-arrange summary:focus-visible{outline:2px solid #795398;outline-offset:2px}
 .pg-arrange-menu{position:absolute;z-index:8;top:calc(100% + 7px);left:0;width:178px;padding:5px;border:1px solid #ddd5e7;border-radius:10px;background:#faf8fc;box-shadow:0 8px 24px #402b4b24}
 .pg-space-toolbar .pg-arrange-menu button{width:100%;justify-content:flex-start;gap:8px;padding:9px;font-size:12px;text-align:left}
 .pg-stage .pg-view-tools{margin-left:auto;gap:12px}
@@ -32,7 +31,6 @@
 .pg-layers li>button>span:first-child{font-size:25px;flex-shrink:0;width:30px}
 .pg-layers li>button>span:nth-child(2){overflow-wrap:anywhere;min-width:0;flex:1}
 .pg-layers li>button>small{font-size:10px;color:#796a8a}
-.pg-layers button:focus-visible{outline:2px solid #795398;outline-offset:-2px}
 .pg-layer-empty{font-size:12px;line-height:1.6;color:#796a8a}
 .pg-floating-library .pg-search,.pg-floating-library .pg-filters,.pg-floating-library .pg-picker-heading,.pg-floating-library .pg-paging,.pg-floating-library .pg-emoji-credit{flex-shrink:0}
 .pg-picker-results{min-height:0;overflow:hidden;flex:1;display:flex;flex-direction:column}

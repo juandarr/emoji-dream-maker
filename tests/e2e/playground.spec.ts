@@ -109,9 +109,9 @@ test("object clicks toggle selection; dragging stays unselected and deletes undo
   await node.click();await expect(node).toHaveAttribute("aria-pressed","false");
   await node.click();await page.keyboard.press("Escape");await expect(node).toHaveAttribute("aria-pressed","false");
   await node.click();await page.locator(".pg-board").click({position:{x:15,y:15}});await expect(node).toHaveAttribute("aria-pressed","false");await expect(page.getByRole("button",{name:"Delete selected object"})).toHaveCount(0);
-  // Keyboard users get a visible focus ring while the artwork stays undecorated.
+  // Keyboard selection still works without the extra rectangular focus outline.
   await page.keyboard.press("Tab");await node.focus();expect(await node.evaluate(el=>el.matches(":focus-visible"))).toBe(true);
-  await expect(node).toHaveCSS("outline-style","solid");await expect(node.locator(":scope > span")).toHaveCSS("outline-style","none");
+  await expect(node).toHaveCSS("outline-style","none");await expect(node.locator(":scope > span")).toHaveCSS("outline-style","none");
   await page.keyboard.press("Enter");await expect(node).toHaveAttribute("aria-pressed","true");await page.keyboard.press("Space");await expect(node).toHaveAttribute("aria-pressed","false");
   const before=await node.getAttribute("style"),box=await node.boundingBox();
   await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);await page.mouse.down();await page.mouse.move(box!.x+box!.width/2+100,box!.y+box!.height/2+80,{steps:8});
@@ -154,6 +154,36 @@ test("fullscreen keeps the floating picker, scaled dragging, and relative zoom l
   const after=await node.boundingBox();expect(after!.x-before!.x).toBeCloseTo(90,0);expect(after!.y-before!.y).toBeCloseTo(50,0);await expect(node).toHaveAttribute("aria-pressed","false");
   await page.getByRole("button",{name:"Exit fullscreen"}).click();await expect(page.locator(".pg-stage")).not.toHaveClass(/is-fullscreen/);await expect(node).toHaveCount(1);
   await page.locator(".pg-stage").scrollIntoViewIfNeeded();await page.getByRole("button",{name:"Fit objects in view"}).click();await expect(node).toBeInViewport();
+});
+
+test("dropping a new emoji after fitting preserves the camera and release location",async({page})=>{
+  await page.emulateMedia({reducedMotion:"reduce"});await open(page);await add(page,"red heart","red heart");await page.keyboard.press("Escape");
+  await page.getByRole("button",{name:"Enter fullscreen"}).click();await page.getByRole("button",{name:"Fit objects in view"}).click();
+  await picker(page);await page.getByLabel("Search emojis in English or Spanish").fill("octopus");
+  const canvas=await page.locator(".pg-board").boundingBox(),tray=await page.getByRole("button",{name:"Add octopus",exact:true}).boundingBox();
+  const dest={x:canvas!.x+canvas!.width*.8,y:canvas!.y+canvas!.height*.7};
+  const camera=await page.locator(".pg-world").getAttribute("style");
+  await page.mouse.move(tray!.x+tray!.width/2,tray!.y+tray!.height/2);await page.mouse.down();await page.mouse.move(dest.x,dest.y,{steps:20});await page.mouse.up();
+  const node=page.locator('.pg-node[data-glyph="🐙"]');await expect(node).toHaveCount(1);
+  // Await the new artwork's font measurement, which used to refit and move the camera.
+  await page.evaluate(async()=>{await document.fonts.ready;await new Promise(resolve=>setTimeout(resolve,300));});
+  await expect(page.locator(".pg-world")).toHaveAttribute("style",camera!);
+  const box=await node.boundingBox();expect(Math.abs(box!.x+box!.width/2-dest.x)).toBeLessThan(1);expect(Math.abs(box!.y+box!.height/2-dest.y)).toBeLessThan(1);
+});
+
+for(const wheel of [-20000,20000])test(`drop placement follows the release at ${wheel<0?"maximum":"minimum"} zoom, even if the page scrolls during dragging`,async({page})=>{
+  await open(page);await page.locator(".pg-stage").scrollIntoViewIfNeeded();
+  const canvas=page.locator(".pg-board"),initial=await canvas.boundingBox();
+  await page.mouse.move(initial!.x+initial!.width*.8,initial!.y+initial!.height*.6);await page.mouse.wheel(0,wheel);
+  await expect(page.getByLabel("Canvas zoom")).toHaveText(wheel<0?"800%":"10%");
+  await picker(page);await page.getByLabel("Search emojis in English or Spanish").fill("octopus");
+  const tray=await page.getByRole("button",{name:"Add octopus",exact:true}).boundingBox();
+  await page.mouse.move(tray!.x+tray!.width/2,tray!.y+tray!.height/2);await page.mouse.down();await page.mouse.move(tray!.x+tray!.width/2+12,tray!.y+tray!.height/2,{steps:3});
+  await expect(page.locator(".pg-drag-glyph")).toBeVisible();await page.evaluate(()=>window.scrollBy({top:-80,behavior:"instant"}));
+  const rect=await canvas.boundingBox(),dest={x:rect!.x+rect!.width*.8,y:rect!.y+rect!.height*.5};
+  await page.mouse.move(dest.x,dest.y,{steps:20});await page.mouse.up();
+  const node=page.locator(".pg-node");await expect(node).toHaveCount(1);const box=await node.boundingBox();
+  expect(Math.abs(box!.x+box!.width/2-dest.x)).toBeLessThan(1);expect(Math.abs(box!.y+box!.height/2-dest.y)).toBeLessThan(1);
 });
 
 test("floating picker drag uses zoomed and panned world coordinates and saves off-board positions",async({page})=>{
@@ -215,6 +245,7 @@ test("touch can scroll the picker, tap to select and drag the original object",a
     await expect(page.locator(".pg-drag-glyph")).toBeVisible();
     for(let i=1;i<=12;i++)await cdp.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:tray!.x+tray!.width/2+(drop.x-tray!.x-tray!.width/2)*i/12,y:tray!.y+tray!.height/2+(drop.y-tray!.y-tray!.height/2)*i/12}]});
     await cdp.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});await expect(node).toHaveCount(2);await expect(node.last()).toHaveAttribute("aria-pressed","false");
+    const placed=await node.last().boundingBox();expect(Math.abs(placed!.x+placed!.width/2-drop.x)).toBeLessThan(1);expect(Math.abs(placed!.y+placed!.height/2-drop.y)).toBeLessThan(1);
 
   } finally {await context.close();}
 });
