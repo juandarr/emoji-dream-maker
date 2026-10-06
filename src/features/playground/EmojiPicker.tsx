@@ -1,6 +1,6 @@
 "use client";
 
-import {useMemo} from "react";
+import {useLayoutEffect,useMemo,useRef} from "react";
 import {useDraggable} from "@dnd-kit/core";
 import {ChevronLeft,ChevronRight,Search} from "lucide-react";
 import {categories,searchCatalog} from "@/lib/catalog";
@@ -18,6 +18,7 @@ function PaletteEmoji({emoji,locale,onAdd,disabled}:{emoji:EmojiRecord;locale:Lo
 }
 export default function EmojiPicker({locale,state,onChange,onAdd,disabled,sceneEmojiIds}:{locale:Locale;state:PickerState;onChange:(state:PickerState)=>void;onAdd:(emoji:EmojiRecord)=>void;disabled:boolean;sceneEmojiIds:string[]}){
   const t=playgroundLabels[locale],{query,category,sort,page,subject}=state;
+  const paletteRef=useRef<HTMLDivElement|null>(null);
   const update=(patch:Partial<PickerState>)=>onChange({...state,page:0,...patch});
   const matches=useMemo(()=>{
     let result=searchCatalog(query,category);
@@ -40,6 +41,7 @@ export default function EmojiPicker({locale,state,onChange,onAdd,disabled,sceneE
     return result;
   },[query,category,sort,locale,subject,sceneEmojiIds]);
   const pages=Math.max(1,Math.ceil(matches.length/30)),currentPage=Math.min(page,pages-1),visible=matches.slice(currentPage*30,(currentPage+1)*30);
+  useLayoutEffect(()=>{paletteRef.current?.scrollTo({top:0,left:0,behavior:"instant"});},[currentPage,query,category,subject,sort,locale]);
   return <>
     <label className="pg-search"><Search size={16}/><input aria-label={t.search} placeholder={locale==="es"?"océano, amor, 🌙…":"ocean, love, 🌙…"} value={query} maxLength={150} onChange={e=>update({query:e.target.value})}/></label>
     <div className="pg-filters pg-picker-dropdowns">
@@ -48,7 +50,7 @@ export default function EmojiPicker({locale,state,onChange,onAdd,disabled,sceneE
       <label>{t.sortFilter}<select aria-label={t.sort} value={sort} onChange={e=>update({sort:e.target.value})}><option value="relevance">{t.relevance}</option><option value="alphabetical">{t.alphabetical}</option><option value="unicode">{t.unicode}</option></select></label>
     </div>
     <div id="pg-picker-results" className="pg-picker-results">
-      <div className="pg-palette">{visible.map(emoji=><PaletteEmoji key={emoji.id} emoji={emoji} locale={locale} onAdd={()=>onAdd(emoji)} disabled={disabled}/>)}{!visible.length&&<p role="status">{t.noMatches}</p>}</div>
+      <div ref={paletteRef} className="pg-palette">{visible.map(emoji=><PaletteEmoji key={emoji.id} emoji={emoji} locale={locale} onAdd={()=>onAdd(emoji)} disabled={disabled}/>)}{!visible.length&&<p role="status">{t.noMatches}</p>}</div>
     </div>
     <div className="pg-paging"><span aria-live="polite">{(matches.length===1?t.pickerCountOne:t.pickerCount).replace("{count}",matches.length.toLocaleString(locale)).replace("{page}",String(currentPage+1)).replace("{pages}",String(pages))}</span><div><button aria-label={t.previous} disabled={currentPage===0} onClick={()=>onChange({...state,page:currentPage-1})}><ChevronLeft size={17}/></button><button aria-label={t.next} disabled={currentPage===pages-1} onClick={()=>onChange({...state,page:currentPage+1})}><ChevronRight size={17}/></button></div></div>
   </>;
