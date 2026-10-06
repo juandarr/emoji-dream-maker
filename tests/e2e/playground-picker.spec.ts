@@ -5,6 +5,14 @@ async function open(page:Page){
   await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();await page.getByRole("button",{name:"Open emoji picker",exact:true}).click();
   await page.getByLabel("Search emojis in English or Spanish").fill("octopus");
 }
+for(const width of [1280,390])test(`picker pagination resets the emoji scroll position at ${width}px`,async({page})=>{
+  await page.setViewportSize({width,height:650});await open(page);await page.getByLabel("Search emojis in English or Spanish").fill("");
+  const palette=page.locator(".pg-palette"),paging=page.locator(".pg-paging");
+  const scroll=async()=>{await palette.hover();await page.mouse.wheel(0,500);await expect.poll(()=>palette.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);};
+  await scroll();await page.getByRole("button",{name:"Next emojis",exact:true}).click();await expect(paging).toContainText("Page 2 of");await expect.poll(()=>palette.evaluate(el=>el.scrollTop)).toBe(0);
+  await scroll();await page.getByRole("button",{name:"Previous emojis",exact:true}).click();await expect(paging).toContainText("Page 1 of");await expect.poll(()=>palette.evaluate(el=>el.scrollTop)).toBe(0);
+  await scroll();await page.getByLabel("Sort emojis").selectOption("alphabetical");await expect.poll(()=>palette.evaluate(el=>el.scrollTop)).toBe(0);
+});
 test("picker stays open for repeated click additions and mouse drops, then dismisses by outside click",async({page})=>{
   await open(page);const picker=page.getByRole("dialog",{name:"Emoji library",exact:true}),add=page.getByRole("button",{name:"Add octopus",exact:true});
   for(let i=1;i<=2;i++){await add.click();await expect(page.locator(".pg-node")).toHaveCount(i);await expect(picker).toBeVisible();await expect(page.getByLabel("Search emojis in English or Spanish")).toHaveValue("octopus");}
