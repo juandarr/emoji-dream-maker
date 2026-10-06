@@ -8,7 +8,7 @@ export type GenerationSettings={kind:OutputKind;locale:Locale;tone:string;model:
 export type GenerationResult={text:string;title?:string;model:string;provider:"openrouter";usage?:{promptTokens:number;completionTokens:number;cost?:number};generationId?:string};
 export type GenerationRun={id:string;createdAt:number;identity:string;board:Composition;brief:ReturnType<typeof compileBrief>;settings:GenerationSettings;status:"running"|"succeeded"|"failed"|"unknown";result?:GenerationResult;error?:string;errorCode?:string};
 
-/** An authored title always wins; older saved runs need no migration. */
+/** Prefer the output-language title; older runs without one keep their scene title. */
 export function creationTitle(run:GenerationRun) {
-  return run.board.title.trim()?run.board.title:run.result?.title;
+  return run.result?.title?.trim()?run.result.title:run.board.title.trim()?run.board.title:undefined;
 }

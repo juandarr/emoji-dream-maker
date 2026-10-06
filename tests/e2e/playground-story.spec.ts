@@ -7,6 +7,26 @@ const board = {
 };
 const text = "“Érase una vez una luna curiosa.”\n\nA bear followed its light, carrying a small idea into a very large world.";
 
+for(const locale of ["en","es"] as const)test(`${locale}: localized output title wins over a scene title in another language in the result, shelf and reader`,async({page})=>{
+  const title=locale==="es"?"Una celebración de regalos y alegría":"A Festive Gathering of Gifts and Joy";
+  const sourceTitle=locale==="es"?"A Festive Gathering of Gifts and Joy":"Una celebración de regalos y alegría";
+  const prose=locale==="es"?"Los regalos y los globos sugieren una celebración llena de alegría.":"The gifts and balloons suggest a celebration full of joy.";
+  await page.route("**/api/generations",route=>route.fulfill({json:route.request().method()==="GET"?{configured:true,models:["test/text"]}:{result:{title,text:prose,model:"test/text",provider:"openrouter"}}}));
+  await page.goto("/");if(locale==="es")await page.getByLabel("Interface language").selectOption("es");
+  await page.getByRole("button",{name:locale==="es"?"Espacio creativo":"Playground",exact:true}).click();
+  await page.locator('input[type="file"]').setInputFiles({name:"scene.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify({...board,title:sourceTitle}))});
+  const submission=page.waitForRequest(r=>r.url().endsWith("/api/generations")&&r.method()==="POST");
+  await page.getByRole("button",{name:locale==="es"?"Generar":"Generate",exact:true}).click();
+  expect((await submission).postDataJSON()).toMatchObject({settings:{locale},board:{title:sourceTitle}});
+  await expect(page.locator(".pg-output .pg-story-title")).toHaveText(title);await expect(page.locator(".pg-output .pg-story-title")).toHaveAttribute("lang",locale);
+  await expect(page.locator(".pg-output .pg-story-prose")).toHaveText(prose);await expect(page.locator(".pg-history-title").first()).toHaveText(title);
+  await page.getByRole("button",{name:locale==="es"?"Abrir vista de lectura":"Open reading view",exact:true}).click();
+  const reader=page.getByRole("dialog",{name:title,exact:true});await expect(reader.locator(".pg-story-title")).toHaveText(title);await expect(reader.locator(".pg-story-prose")).toHaveText(prose);
+  await page.keyboard.press("Escape");await expect(page.getByText(locale==="es"?"Guardado en este dispositivo":"Saved on this device",{exact:true})).toBeVisible();
+  await page.reload();await page.getByRole("button",{name:locale==="es"?"Espacio creativo":"Playground",exact:true}).click();
+  await expect(page.locator(".pg-output .pg-story-title")).toHaveText(title);await expect(page.locator(".pg-history-title").first()).toHaveText(title);
+});
+
 async function open(page: Page) {
   // The reading fonts must work even when third-party font services are unavailable.
   await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort());

@@ -4,6 +4,7 @@ import { emojiById } from "@/lib/catalog";
 import { createNode, emptyComposition } from "@/features/playground/model";
 import { GET, POST } from "@/app/api/generations/route";
 import { GenerationError, openRouterGenerator } from "@/features/generation/server/openrouter";
+import { creationTitle, outputKinds, type GenerationRun } from "@/features/generation/model";
 const settings={kind:"poem" as const,locale:"en" as const,tone:"gentle",model:"test/text"};
 const board={...emptyComposition(),nodes:[createNode(emojiById.get("2764")!,"en","heart",0)]};
 function request(body:unknown,headers?:Record<string,string>){return new NextRequest("http://localhost/api/generations",{method:"POST",body:typeof body==="string"?body:JSON.stringify(body),headers});}
@@ -83,7 +84,7 @@ it("accepts Interpretation as a generation mode",async()=>{
   expect(response.status).toBe(200);expect(generate).toHaveBeenCalledWith(board,expect.objectContaining({kind:"interpretation",locale:"es"}));
 });
 
-it("requests a one-paragraph interpretation and a title in the UI language in one call",async()=>{
+it("requests a one-paragraph interpretation and a title in the selected output language in one call",async()=>{
   const fetch=vi.fn().mockResolvedValue(Response.json({choices:[{message:{content:JSON.stringify({title:"Un nuevo comienzo",text:"Estos símbolos evocan\n\nuna nueva amistad."})}}]}));vi.stubGlobal("fetch",fetch);
   const result=await openRouterGenerator.generate(board,{...settings,kind:"interpretation",locale:"es"});
   expect(result.title).toBe("Un nuevo comienzo");expect(result.text).toBe("Estos símbolos evocan una nueva amistad.");
@@ -91,16 +92,47 @@ it("requests a one-paragraph interpretation and a title in the UI language in on
   expect(prompt).toContain("exactly one paragraph");expect(prompt).toContain("Spanish");expect(prompt).toContain('"title"');expect(prompt).toContain("otherwise invent");
 });
 
-it("preserves an explicitly supplied title exactly, even when the model substitutes its own",async()=>{
-  vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({choices:[{message:{content:'```json\n{"title":"Wrong title","text":"A little poem"}\n```'}}]})));
-  const result=await openRouterGenerator.generate({...board,title:"  My title: 🌙 & YOU  "},settings);
-  expect(result.title).toBe("  My title: 🌙 & YOU  ");expect(result.text).toBe("A little poem");
+for(const locale of ["en","es"] as const)it(`requires both generated fields in ${locale} for every output format, even with source ideas in another language`,async()=>{
+  const fetch=vi.fn().mockImplementation(async()=>Response.json({choices:[{message:{content:JSON.stringify({title:locale==="es"?"Una celebración llena de alegría":"A celebration full of joy",text:locale==="es"?"La escena sugiere una celebración.":"The scene suggests a celebration."})}}]}));vi.stubGlobal("fetch",fetch);
+  const source={...board,nodes:[{...board.nodes[0],customMeaning:true,meaning:locale==="es"?"Gifts and joy":"Regalos y alegría"}]};
+  for(const kind of outputKinds)await openRouterGenerator.generate(source,{...settings,locale,kind});
+  expect(fetch).toHaveBeenCalledTimes(outputKinds.length);
+  for(const [,init] of fetch.mock.calls){
+    const messages=JSON.parse(init.body).messages,language=locale==="es"?"Spanish":"English";
+    expect(messages[0].content).toContain(`Both "title" and "text" must be written in ${language}`);
+    expect(messages[0].content).toContain(`invent a concise, evocative title in ${language}`);
+    expect(messages[0].content).toContain(locale==="es"?"No generes un título en inglés para un texto en español":"Do not generate a Spanish title for an English body");
+    const input=JSON.parse(messages[1].content);expect(input.outputLanguage).toBe(language);expect(input.brief.locale).toBe(locale);expect(input.brief.entities[0].meaning).toBe(source.nodes[0].meaning);
+  }
+});
+
+it("uses the translated output title without replacing the author's original scene title",async()=>{
+  const fetch=vi.fn().mockResolvedValue(Response.json({choices:[{message:{content:'```json\n{"title":"Una celebración de regalos y alegría","text":"La escena evoca una celebración."}\n```'}}]}));vi.stubGlobal("fetch",fetch);
+  const source={...board,title:"A Festive Gathering of Gifts and Joy"};
+  const result=await openRouterGenerator.generate(source,{...settings,kind:"interpretation",locale:"es"});
+  expect(result.title).toBe("Una celebración de regalos y alegría");expect(result.text).toBe("La escena evoca una celebración.");expect(source.title).toBe("A Festive Gathering of Gifts and Joy");
+  const prompt=JSON.parse(fetch.mock.calls[0][1].body).messages[0].content;expect(prompt).toContain("translate it into Spanish");
+  const run={board:source,result} as GenerationRun;expect(creationTitle(run)).toBe(result.title);
+  expect(creationTitle({board:source} as GenerationRun)).toBe(source.title);
 });
 
 it("gives plain-text model responses a title while keeping the authored board untouched",async()=>{
   vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({choices:[{message:{content:"An ordinary text-only poem."}}]})));
   const result=await openRouterGenerator.generate(board,settings);
-  expect(result.title).toBe("Love");expect(result.text).toBe("An ordinary text-only poem.");expect(board.title).toBe("");
+  expect(result.title).toBe("red heart");expect(result.text).toBe("An ordinary text-only poem.");expect(board.title).toBe("");
+});
+
+it("localizes Spanish fallback titles even when the board was authored in English",async()=>{
+  const fetch=vi.fn().mockResolvedValue(Response.json({choices:[{message:{content:"La escena evoca una celebración llena de alegría."}}]}));vi.stubGlobal("fetch",fetch);
+  const source={...board,nodes:[{...board.nodes[0],customMeaning:true,meaning:"Gifts and joy"}]};
+  const result=await openRouterGenerator.generate(source,{...settings,kind:"interpretation",locale:"es"});
+  expect(result.title).toBe("corazón rojo");expect(result.text).toBe("La escena evoca una celebración llena de alegría.");expect(source.nodes[0].meaning).toBe("Gifts and joy");expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it("uses a Spanish fallback for unknown imported symbols instead of their English labels",async()=>{
+  vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({choices:[{message:{content:'{"title":"","text":"Una escena llena de alegría."}'}}]})));
+  const source={...board,nodes:[{...board.nodes[0],emojiId:"unknown-import",label:"A festive gathering",meaning:"Gifts and joy"}]};
+  const result=await openRouterGenerator.generate(source,{...settings,locale:"es"});expect(result.title).toBe("Inspiración del lienzo");
 });
 
 it("rejects incomplete structured output instead of exposing broken JSON as a creation",async()=>{
