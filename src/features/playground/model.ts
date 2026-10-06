@@ -38,11 +38,25 @@ export function parseComposition(value: unknown): Composition {
 }
 export type BoardAction =
   | {type:"add";node:BoardNode} | {type:"update";id:string;patch:Partial<Omit<BoardNode,"id"|"emojiId">>}
+  | {type:"paste";nodes:BoardNode[];edges:BoardEdge[]}
+  | {type:"arrange";ids:string[];direction:ArrangeDirection}
   | {type:"transform";updates:{id:string;patch:Pick<BoardNode,"x"|"y"|"scale"|"rotation">}[]} | {type:"removeMany";ids:string[]}
   | {type:"remove";id:string} | {type:"edge";edge:BoardEdge} | {type:"removeEdge";id:string}
   | {type:"fields";patch:Partial<Pick<Composition,"title"|"intent"|"interpretation">>}
   | {type:"load";board:Composition} | {type:"replace";board:Composition} | {type:"undo"} | {type:"redo"};
 export type BoardHistory = {past:Composition[];present:Composition;future:Composition[]};
+export type ArrangeDirection="front"|"forward"|"backward"|"back";
+/** Array order is the persisted stack, back to front. A selection keeps its internal order. */
+export function arrangeNodes(nodes:BoardNode[],ids:string[],direction:ArrangeDirection):BoardNode[] {
+  const selected=new Set(ids),next=[...nodes];
+  if(direction==="front"||direction==="back"){
+    const picked=nodes.filter(n=>selected.has(n.id)),rest=nodes.filter(n=>!selected.has(n.id));
+    return direction==="front"?[...rest,...picked]:[...picked,...rest];
+  }
+  if(direction==="forward")for(let i=next.length-2;i>=0;i--){if(selected.has(next[i].id)&&!selected.has(next[i+1].id))[next[i],next[i+1]]=[next[i+1],next[i]];}
+  else for(let i=1;i<next.length;i++){if(selected.has(next[i].id)&&!selected.has(next[i-1].id))[next[i],next[i-1]]=[next[i-1],next[i]];}
+  return next;
+}
 export function boardReducer(state:BoardHistory,action:BoardAction): BoardHistory {
   if (action.type === "load") return {past:[],present:action.board,future:[]};
   if (action.type === "undo") return state.past.length ? {past:state.past.slice(0,-1),present:state.past.at(-1)!,future:[state.present,...state.future].slice(0,50)} : state;
@@ -51,6 +65,12 @@ export function boardReducer(state:BoardHistory,action:BoardAction): BoardHistor
   let next=board;
   switch(action.type) {
     case "add": if(board.nodes.length < NODE_LIMIT && !board.nodes.some(n=>n.id===action.node.id)) next={...board,nodes:[...board.nodes,action.node]}; break;
+    case "paste": {
+      const ids=new Set([...board.nodes,...action.nodes].map(n=>n.id)),edgeIds=new Set([...board.edges,...action.edges].map(e=>e.id));
+      if(board.nodes.length+action.nodes.length<=NODE_LIMIT&&board.edges.length+action.edges.length<=160&&ids.size===board.nodes.length+action.nodes.length&&edgeIds.size===board.edges.length+action.edges.length&&action.edges.every(e=>ids.has(e.source)&&ids.has(e.target)&&e.source!==e.target))next={...board,nodes:[...board.nodes,...action.nodes],edges:[...board.edges,...action.edges]};
+      break;
+    }
+    case "arrange": next={...board,nodes:arrangeNodes(board.nodes,action.ids,action.direction)};break;
     case "update": next={...board,nodes:board.nodes.map(n=>n.id===action.id?{...n,...action.patch}:n)}; break;
     case "transform": {const updates=new Map(action.updates.map(u=>[u.id,u.patch]));next={...board,nodes:board.nodes.map(n=>updates.has(n.id)?{...n,...updates.get(n.id)!}:n)};break;}
     case "removeMany": {const ids=new Set(action.ids);next={...board,nodes:board.nodes.filter(n=>!ids.has(n.id)),edges:board.edges.filter(e=>!ids.has(e.source)&&!ids.has(e.target))};break;}
@@ -71,6 +91,6 @@ export function compileBrief(board:Composition,locale:Locale) {
   const list=board.nodes.map(n=>`${n.glyph} ${n.meaning}${n.role!=="subject"?` (${locale==="es"?(n.role==="mood"?"ánimo":"ambiente"):n.role})`:""}${n.note?`: ${n.note}`:""}`).join("; ");
   const relations=board.edges.map(e=>`${board.nodes.find(n=>n.id===e.source)?.meaning} → ${e.label} → ${board.nodes.find(n=>n.id===e.target)?.meaning}`).join("; ");
   const preview=board.nodes.length ? [board.title,`${locale==="es"?"Ideas elegidas":"Chosen ideas"}: ${list}.`,relations&&`${locale==="es"?"Relaciones":"Relationships"}: ${relations}.`,board.intent&&`${locale==="es"?"Intención":"Intent"}: ${board.intent}`].filter(Boolean).join("\n") : "";
-  return {compilerVersion:2,locale,title:board.title,entities,relationships,intent:board.intent,interpretation:board.interpretation.trim()||preview,layout};
+  return {compilerVersion:3,locale,title:board.title,entities,relationships,intent:board.intent,interpretation:board.interpretation.trim()||preview,layout,stackingOrder:board.nodes.map(n=>n.id)};
 }
 export function semanticIdentity(board:Composition,locale:Locale) { return JSON.stringify(compileBrief(board,locale)); }

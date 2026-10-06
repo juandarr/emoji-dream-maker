@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {fitCamera,maxZoom,worldPoint,zoomAt,GLYPH_SIZE} from "@/features/playground/camera";
+import {boundedZoom,fitCamera,steppedZoom,worldPoint,zoomAt} from "@/features/playground/camera";
 import {emptyComposition,parseComposition} from "@/features/playground/model";
 import {emojiById} from "@/lib/catalog";
 import {createNode} from "@/features/playground/model";
@@ -8,8 +8,18 @@ describe("canvas camera",()=>{
     const camera={x:-230,y:170,zoom:2},cursor={x:380,y:220};
     expect(worldPoint(cursor,zoomAt(camera,cursor,5))).toEqual(worldPoint(cursor,camera));
   });
-  it("limits the glyph to the shorter viewport dimension",()=>{
-    for(const [width,height] of [[390,600],[1400,850]])expect(maxZoom(width,height)*GLYPH_SIZE).toBe(Math.min(width,height));
+  it("limits zoom relative to the fitted view for tiny and expansive compositions",()=>{
+    for(const reference of [.00015,1,15]){
+      expect(boundedZoom(reference*100,reference)/reference).toBeCloseTo(8);
+      expect(boundedZoom(reference*.001,reference)/reference).toBeCloseTo(.1);
+      expect(boundedZoom(reference*1.5,reference)/reference).toBeCloseTo(1.5);
+    }
+  });
+  it("steps through predictable percentages around the fitted 100% view",()=>{
+    expect(steppedZoom(1,1)).toBe(1.25);expect(steppedZoom(1.25,1)).toBe(1.5);
+    expect(steppedZoom(1.5,-1)).toBe(1.25);expect(steppedZoom(1.25,-1)).toBe(1);
+    expect(steppedZoom(1.37,1)).toBe(1.5);expect(steppedZoom(1.37,-1)).toBe(1.25);
+    expect(steppedZoom(.1,-1)).toBe(.1);expect(steppedZoom(8,1)).toBe(8);
   });
   it("finds objects after panning beyond the original board",()=>{
     const points=[{x:-500,y:1200},{x:-450,y:1500}],camera=fitCamera(points,800,600);

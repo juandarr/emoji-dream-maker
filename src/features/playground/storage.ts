@@ -51,9 +51,11 @@ export function restoreRuns(value:unknown):GenerationRun[] {
       const brief=compileBrief(board,settings.locale);
       // Older briefs omitted layout, but their board snapshots already retained it.
       // Upgrade matching identities without hiding an actual change to the author's ideas.
-      const {layout:legacyLayout,...legacyBrief}=brief;
-      void legacyLayout;
-      const identity=run.identity===JSON.stringify({...legacyBrief,compilerVersion:1})?JSON.stringify(brief):run.identity;
+      const {stackingOrder:legacyStack,...versionTwo}=brief;
+      const {layout:legacyLayout,...versionOne}=versionTwo;
+      void legacyStack;void legacyLayout;
+      const matchesLegacy=run.identity===JSON.stringify({...versionTwo,compilerVersion:2})||run.identity===JSON.stringify({...versionOne,compilerVersion:1});
+      const identity=matchesLegacy?JSON.stringify(brief):run.identity;
       if(run.result && (typeof run.result.text!=="string" || run.result.text.length>16000 || typeof run.result.model!=="string" || run.result.model.length>150 || run.result.provider!=="openrouter"))continue;
       if(run.status==="succeeded"&&!run.result)continue;
       const usage=run.result?.usage;

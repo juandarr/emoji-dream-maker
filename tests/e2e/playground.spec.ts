@@ -138,17 +138,18 @@ test("wheel zoom anchors under the cursor, pans freely, and never scrolls the pa
   await page.locator(".pg-stage").scrollIntoViewIfNeeded();await page.getByRole("button",{name:"Fit objects in view"}).click();await expect(node).toBeInViewport();
 });
 
-test("fullscreen keeps the floating picker, scaled dragging, and screen-sized zoom limit",async({page})=>{
+test("fullscreen keeps the floating picker, scaled dragging, and relative zoom limits",async({page})=>{
   await open(page);await page.getByRole("button",{name:"Enter fullscreen"}).click();
   await expect(page.locator(".pg-stage")).toHaveClass(/is-fullscreen/);
   await expect.poll(()=>page.evaluate(()=>document.fullscreenElement?.classList.contains("pg-stage"))).toBe(true);
   await picker(page);await expect(page.getByRole("dialog",{name:"Emoji library",exact:true})).toBeVisible();await page.getByLabel("Search emojis in English or Spanish").fill("octopus");await page.getByRole("button",{name:"Add octopus",exact:true}).click();
   await page.getByRole("button",{name:"Close emoji picker",exact:true}).click();const node=page.locator(".pg-node");await expect(node).toHaveAttribute("aria-pressed","false");await expect(node).toBeInViewport();
   const canvas=page.locator(".pg-board"),rect=await canvas.boundingBox();await page.mouse.move(rect!.x+rect!.width/2,rect!.y+rect!.height/2);await page.mouse.wheel(0,-20000);
-  const zoom=Number((await page.getByLabel("Canvas zoom").textContent())!.replace("%",""))/100;
-  expect(zoom*40).toBeCloseTo(Math.min(rect!.width,rect!.height),-1);await expect(page.getByRole("button",{name:"Zoom in",exact:true})).toBeDisabled();
+  await expect(page.getByLabel("Canvas zoom")).toHaveText("800%");await expect(page.getByRole("button",{name:"Zoom in",exact:true})).toBeDisabled();
   await page.mouse.wheel(0,20000);await expect(page.getByLabel("Canvas zoom")).toHaveText("10%");
-  await page.getByRole("button",{name:"Fit objects in view"}).click();await page.getByRole("button",{name:"Zoom in",exact:true}).click();await page.getByRole("button",{name:"Zoom in",exact:true}).click();
+  await page.getByRole("button",{name:"Fit objects in view"}).click();
+  await expect(page.getByLabel("Canvas zoom")).toHaveText("100%");
+  const zoomIn=page.getByRole("button",{name:"Zoom in",exact:true});await zoomIn.click();await zoomIn.click();await expect(page.getByLabel("Canvas zoom")).toHaveText("150%");
   const before=await node.boundingBox();await page.mouse.move(before!.x+before!.width/2,before!.y+before!.height/2);await page.mouse.down();await page.mouse.move(before!.x+before!.width/2+90,before!.y+before!.height/2+50,{steps:8});await page.mouse.up();
   const after=await node.boundingBox();expect(after!.x-before!.x).toBeCloseTo(90,0);expect(after!.y-before!.y).toBeCloseTo(50,0);await expect(node).toHaveAttribute("aria-pressed","false");
   await page.getByRole("button",{name:"Exit fullscreen"}).click();await expect(page.locator(".pg-stage")).not.toHaveClass(/is-fullscreen/);await expect(node).toHaveCount(1);
@@ -226,6 +227,7 @@ test("emoji vectors render at display resolution through maximum zoom",async({br
       await expect.poll(()=>page.evaluate(()=>Boolean(document.fullscreenElement))).toBe(true);
       await page.getByRole("button",{name:"Fit objects in view"}).click();
       const artwork=page.locator(".pg-node .pg-artwork");await expect(artwork).toHaveText("🐙");
+      const fittedWidth=(await artwork.boundingBox())!.width;
       await page.evaluate(async()=>{await document.fonts.load('40px "Playground Noto Emoji"');await document.fonts.ready;});
       const cdp=await context.newCDPSession(page);await cdp.send("DOM.enable");await cdp.send("CSS.enable");
       const {root}=await cdp.send("DOM.getDocument");
@@ -234,7 +236,7 @@ test("emoji vectors render at display resolution through maximum zoom",async({br
       expect(fonts).toEqual([expect.objectContaining({familyName:"Noto Color Emoji",isCustomFont:true,glyphCount:1})]);
       const rect=await page.locator(".pg-board").boundingBox();await page.mouse.move(rect!.x+rect!.width/2,rect!.y+rect!.height/2);await page.mouse.wheel(0,-20000);await expect(page.getByRole("button",{name:"Zoom in",exact:true})).toBeDisabled();
       const metrics=await artwork.evaluate(el=>{const rect=el.getBoundingClientRect();const world=document.querySelector(".pg-world")!;const transform=new DOMMatrixReadOnly(getComputedStyle(world).transform);return {width:rect.width,height:rect.height,fontSize:parseFloat(getComputedStyle(el.parentElement!).fontSize),scaleX:transform.a,scaleY:transform.d,willChange:getComputedStyle(world).willChange};});
-      expect(metrics.width).toBeCloseTo(Math.min(rect!.width,rect!.height),0);expect(metrics.fontSize).toBeCloseTo(metrics.width,0);expect(metrics.scaleX).toBe(1);expect(metrics.scaleY).toBe(1);expect(metrics.willChange).toBe("auto");
+      expect(metrics.width).toBeCloseTo(fittedWidth*8,0);expect(metrics.fontSize).toBeCloseTo(metrics.width,0);expect(metrics.scaleX).toBe(1);expect(metrics.scaleY).toBe(1);expect(metrics.willChange).toBe("auto");
       await page.locator(".pg-board").screenshot({path:`/tmp/vector-emoji-max-zoom-${deviceScaleFactor}x.png`});
       await page.mouse.wheel(0,20000);await expect(page.getByLabel("Canvas zoom")).toHaveText("10%");await expect(artwork).toHaveText("🐙");
       await page.getByRole("button",{name:"Fit objects in view"}).click();await page.locator(".pg-node").click();await expect(page.getByRole("button",{name:"Delete selected object"})).toBeVisible();

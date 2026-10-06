@@ -1,6 +1,21 @@
 import {GLYPH_SIZE,type Point} from "./camera";
 import type {BoardNode} from "./model";
-import {rotatePoint,type Bounds,type WorldSize} from "./transforms";
+import {nodeBounds,rotatePoint,type Bounds,type WorldSize} from "./transforms";
+
+/** Bounds of painted artwork, including its asymmetric placement and rotation. */
+export function paintedBounds(nodes:BoardNode[],world:WorldSize,shapes:Map<string,GlyphShape>):Bounds|null {
+  if(!nodes.length)return null;
+  const bounds:Bounds={left:Infinity,top:Infinity,right:-Infinity,bottom:-Infinity};
+  for(const node of nodes){
+    const shape=shapes.get(node.glyph);let painted=false;
+    const include=(p:Point)=>{bounds.left=Math.min(bounds.left,p.x);bounds.right=Math.max(bounds.right,p.x);bounds.top=Math.min(bounds.top,p.y);bounds.bottom=Math.max(bounds.bottom,p.y);};
+    if(shape){const unit=GLYPH_SIZE*node.scale/shape.size;
+      shape.rows.forEach((row,y)=>row.forEach(run=>{painted=true;for(const p of [{x:run.left,y},{x:run.right,y},{x:run.left,y:y+1},{x:run.right,y:y+1}]){const q=rotatePoint({x:(p.x-shape.size/2)*unit,y:(p.y-shape.size/2)*unit},node.rotation);include({x:node.x/100*world.width+q.x,y:node.y/100*world.height+q.y});}}));
+    }
+    if(!painted){const b=nodeBounds(node,world);include({x:b.left,y:b.top});include({x:b.right,y:b.bottom});}
+  }
+  return bounds;
+}
 
 /** Opaque horizontal runs in a normalized glyph square. Transparent holes remain empty. */
 export type GlyphShape={size:number;rows:{left:number;right:number}[][];holes:{left:number;right:number}[][]};
