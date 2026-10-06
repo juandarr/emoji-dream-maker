@@ -57,7 +57,6 @@
 .pg-summary-wrap { position:absolute;left:50%;top:100%;transform:translateX(-50%);padding-top:6px;z-index:9; }
 .pg-summary-trigger { display:grid;place-items:center;width:32px;height:32px;border-radius:50%;color:#baabca; }
 .pg-summary-trigger:hover,.pg-summary-trigger[aria-expanded="true"] { color:#eadbf6;background:#2b2434; }
-.pg-summary-trigger:focus-visible { outline:2px solid #c3a1df;outline-offset:3px; }
 .pg-generation-summary { position:absolute;top:100%;right:0;width:320px;max-width:calc(100vw - 48px);max-height:min(420px,60dvh);overflow:auto;border:1px solid #57475f;border-radius:10px;background:#211c2a;box-shadow:0 14px 40px #0007;padding:18px;color:#d9cee2;font-size:12px;line-height:1.6;text-align:left;overflow-wrap:anywhere; }
 .pg-generation-summary dl { display:grid;grid-template-columns:100px minmax(0,1fr);gap:8px 12px;margin:0; }
 .pg-generation-summary dt { color:#b4a6bf; }

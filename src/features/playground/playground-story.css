@@ -116,10 +116,9 @@
 
 .pg-history-meta { align-items:center;min-height:30px; }
 .pg-history-read { display:flex;flex-direction:column;flex:1;min-width:0;width:100%;text-align:left;border:0;padding:0;background:transparent; }
-.pg-history-read:focus-visible { outline:2px solid #c4a0dc;outline-offset:6px;border-radius:3px; }
+.pg-history-read:focus-visible { border-radius:3px; }
 .pg-history-delete { display:grid;place-items:center;width:30px;height:30px;flex-shrink:0;color:#b6a3c2;border-radius:5px; }
 .pg-history-delete:hover { color:#f2bec7;background:#3b2534; }
-.pg-history-delete:focus-visible { outline:2px solid #c4a0dc;outline-offset:2px; }
 .pg-history-expansion { display:flex;justify-content:center;margin-top:18px; }
 .pg-history-expansion button { display:flex;align-items:center;gap:8px;padding:9px 16px;min-height:36px;border:1px solid #473b50;border-radius:7px;color:#d4c4df;font-size:11px; }
 .pg-history-expansion button:hover { border-color:#967ba9;background:#251e30; }
