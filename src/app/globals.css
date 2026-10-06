@@ -302,7 +302,9 @@
 .pg-world {position:absolute;top:0;left:0;transform-origin:0 0;pointer-events:none;will-change:transform}
 .pg-world .pg-edges {overflow:visible}
 .pg-world .pg-node {pointer-events:auto;width:60px;height:60px}
-.pg-world .pg-node>span {font-size:40px;line-height:1;filter:none}
+/* Center the artwork box directly. Inline baselines otherwise add an offset
+   that grows with zoom and disagrees with the measured painted bounds. */
+.pg-world .pg-node>span {display:flex;align-items:center;justify-content:center;font-size:40px;line-height:1;filter:none}
 .pg-world .pg-node.selected>span {filter:drop-shadow(0 0 4px #ab7aed) drop-shadow(0 6px 5px #7651a355);animation:pg-object-float 3s ease-in-out infinite}
 .pg-world .pg-node.dragging>span {filter:drop-shadow(0 9px 5px #45364e55);animation:none}
 .pg-stage.object-dragging,.pg-stage.object-dragging * {cursor:grabbing!important}

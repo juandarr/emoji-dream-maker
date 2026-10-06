@@ -65,9 +65,11 @@ it("carries independent placement, size and rotation for repeated symbols and au
 });
 
 it("upgrades a matching legacy identity without marking an unchanged saved creation stale",()=>{
-  const board=fixture(),{layout,...legacy}=compileBrief(board,"en");void layout;
+  const board=fixture(),{layout,stackingOrder,...legacy}=compileBrief(board,"en");void layout;void stackingOrder;
   const run={id:"legacy-run",identity:JSON.stringify({...legacy,compilerVersion:1}),createdAt:123,status:"succeeded",board,settings:{kind:"poem",locale:"en",tone:"gentle",model:"test/text"},result:{text:"Old poem",provider:"openrouter",model:"test/text"}};
   expect(restoreRuns([run])[0].identity).toBe(semanticIdentity(board,"en"));
   // A mismatched identity must not be rewritten as though the creation used these ideas.
   expect(restoreRuns([{...run,identity:"different ideas"}])[0].identity).toBe("different ideas");
+  const {stackingOrder:stack,...versionTwo}=compileBrief(board,"en");void stack;
+  expect(restoreRuns([{...run,identity:JSON.stringify({...versionTwo,compilerVersion:2})}])[0].identity).toBe(semanticIdentity(board,"en"));
 });

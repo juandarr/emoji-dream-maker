@@ -1,29 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor, useDraggable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { ChevronLeft, ChevronRight, Copy, Feather, Plus, Redo2, RotateCcw, Search, Trash2, Undo2, X } from "lucide-react";
-import { categories, emojiById, searchCatalog } from "@/lib/catalog";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { Copy, Feather, Plus, Redo2, RotateCcw, Trash2, Undo2, X } from "lucide-react";
+import { emojiById } from "@/lib/catalog";
 import type { EmojiRecord, Locale } from "@/lib/types";
 import { boardReducer, clamp, compileBrief, createNode, emptyComposition, NODE_LIMIT, parseComposition, semanticIdentity, type BoardNode } from "./model";
 import { loadWorkspace, saveWorkspace, SAVED_RUN_LIMIT, type Workspace } from "./storage";
 import { playgroundLabels } from "./labels";
 import EmojiArtwork from "./emoji-artwork";
 import Canvas, {type CanvasGeometry} from "./Canvas";
-import {worldPoint} from "./camera";
+import {worldPoint,type Point} from "./camera";
+import ToolbarTooltip from "./ToolbarTooltip";
+import EmojiPicker, {initialPickerState} from "./EmojiPicker";
+import {copySelection,readSelection,pasteSelection,type SelectionClipboard} from "./clipboard";
+import {selectionBounds} from "./transforms";
 import { creationTitle, type ReasoningEffort, type GenerationRun, type GenerationSettings, type OutputKind } from "@/features/generation/model";
 
 import { ReadingButton, StoryContent, StoryModal, StoryPage, StoryShelf, StorySymbols, storyLabels } from "./StoryResults";
 import "./playground-story.css";
+import "./playground-editor.css";
 import CreationHeader, { type GenerationConfig } from "./CreationHeader";
 
 type Seed={id:string;emoji:EmojiRecord;glyph:string};
 
-function PaletteEmoji({emoji,locale,onAdd,disabled}:{emoji:EmojiRecord;locale:Locale;onAdd:()=>void;disabled:boolean}) {
-  const {setNodeRef,attributes,listeners,isDragging}=useDraggable({id:`tray:${emoji.id}`,disabled});
-  const t=playgroundLabels[locale];
-  return <button ref={setNodeRef} {...attributes} {...listeners} disabled={disabled} onClick={onAdd} aria-label={`${t.add} ${emoji.labels[locale]}`} title={emoji.labels[locale]} className={`pg-palette-emoji ${isDragging?"dragging":""}`}><span><EmojiArtwork glyph={emoji.glyph}/></span><small>{emoji.labels[locale]}</small></button>;
-}
 function MeaningField({value,onCommit,label}:{value:string;onCommit:(v:string)=>void;label:string}) {
   const [draft,setDraft]=useState(value);
   useEffect(()=>setDraft(value),[value]);
@@ -41,11 +41,15 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
   const [history,dispatch]=useReducer(boardReducer,{past:[],present:emptyComposition(),future:[]});
   const board=history.present;
   const [ready,setReady]=useState(false),[readFailed,setReadFailed]=useState(false),[saveStatus,setSaveStatus]=useState<"saved"|"saving"|"failed">("saved");
-  const [selectedIds,setSelectedIds]=useState<string[]>([]),[query,setQuery]=useState(""),[group,setGroup]=useState<number|null>(null),[sort,setSort]=useState("relevance"),[page,setPage]=useState(0);
+  const [selectedIds,setSelectedIds]=useState<string[]>([]);
+  const [pickerState,setPickerState]=useState(initialPickerState);
   const [target,setTarget]=useState(""),[relation,setRelation]=useState(""),[dragging,setDragging]=useState<string|null>(null),[notice,setNotice]=useState("");
   const [runs,setRuns]=useState<GenerationRun[]>([]),[busy,setBusy]=useState(false),[config,setConfig]=useState<GenerationConfig|null>(null),[configFailed,setConfigFailed]=useState(false);
   const [reasoningEffort,setReasoningEffort]=useState<ReasoningEffort>("default"),[pendingResultId,setPendingResultId]=useState<string|null>(null);
   const [pickerOpen,setPickerOpen]=useState(false);
+  const clipboardRef=useRef<SelectionClipboard|null>(null),pasteCount=useRef(0),cursorRef=useRef<Point|null>(null);
+  const [canPaste,setCanPaste]=useState(false),[canvasNotice,setCanvasNotice]=useState("");
+  const latestBoard=useRef(board);latestBoard.current=board;
   const geometryRef=useRef<CanvasGeometry>({camera:{x:0,y:0,zoom:1},width:600,height:500});
   const resultsRef=useRef<HTMLElement|null>(null);
   const [kind,setKind]=useState<OutputKind>("interpretation"),[model,setModel]=useState("");
@@ -75,6 +79,13 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
     const deselect=(e:KeyboardEvent)=>{if(e.key==="Escape"&&!document.querySelector("dialog[open]")){setSelectedIds([]);setPickerOpen(false);}};
     window.addEventListener("keydown",deselect);return()=>window.removeEventListener("keydown",deselect);
   },[]);
+  useEffect(()=>{
+    const track=(event:PointerEvent)=>{cursorRef.current=event.pointerType==="touch"?null:{x:event.clientX,y:event.clientY};};
+    const clear=()=>{cursorRef.current=null;};
+    const leave=(event:PointerEvent)=>{if(!event.relatedTarget)clear();};
+    document.addEventListener("pointermove",track,true);document.addEventListener("pointerdown",track,true);document.addEventListener("pointerout",leave);window.addEventListener("blur",clear);
+    return()=>{document.removeEventListener("pointermove",track,true);document.removeEventListener("pointerdown",track,true);document.removeEventListener("pointerout",leave);window.removeEventListener("blur",clear);};
+  },[]);
   const add=useCallback((emoji:EmojiRecord,position?:{x:number;y:number},glyph?:string)=>{
     if(board.nodes.length>=NODE_LIMIT){setNotice(t.limit);return;}
     const rect=boardRef.current?.getBoundingClientRect(),geometry=geometryRef.current;
@@ -83,16 +94,49 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
     const node=createNode(emoji,locale,crypto.randomUUID(),board.nodes.length,placement,glyph);dispatch({type:"add",node});setSelectedIds([]);
   },[board.nodes.length,locale,t.limit]);
   useEffect(()=>{if(ready&&seed&&consumedSeed.current!==seed.id){consumedSeed.current=seed.id;add(seed.emoji,undefined,seed.glyph);}},[ready,seed,add]);
-  const matches=useMemo(()=>{
-    const result=searchCatalog(query,group);
-    if(sort==="alphabetical")result.sort((a,b)=>a.labels[locale].localeCompare(b.labels[locale],locale));
-    if(sort==="unicode")result.sort((a,b)=>a.order-b.order);
-    return result;
-  },[query,group,sort,locale]);
-  const pages=Math.max(1,Math.ceil(matches.length/30)),currentPage=Math.min(page,pages-1),visible=matches.slice(currentPage*30,(currentPage+1)*30);
   const selectedNodes=board.nodes.filter(n=>selectedIds.includes(n.id));
   const selected=selectedNodes.length===1?selectedNodes[0]:undefined;
   const displayBrief=compileBrief(board,locale);
+  function rememberSelection(){
+    const g=geometryRef.current,clip=copySelection(board,selectedIds,{width:g.width,height:g.height});
+    if(clip){clipboardRef.current=clip;pasteCount.current=0;setCanPaste(true);setCanvasNotice(clip.nodes.length===1?t.selectionCopiedOne:t.selectionCopied.replace("{count}",String(clip.nodes.length)));}
+    return clip;
+  }
+  async function copyObjects(){
+    const clip=rememberSelection();if(!clip)return;
+    try{await navigator.clipboard.writeText(JSON.stringify(clip));}catch{setCanvasNotice(t.copyLocal);}
+  }
+  function insertSelection(clip:SelectionClipboard){
+    const current=latestBoard.current;
+    if(current.nodes.length+clip.nodes.length>NODE_LIMIT||current.edges.length+clip.edges.length>160){setCanvasNotice(t.pasteLimit);return;}
+    clipboardRef.current=clip;setCanPaste(true);
+    const g=geometryRef.current,rect=boardRef.current!.getBoundingClientRect(),bounds=selectionBounds(clip.nodes,clip.world)!;
+    const offset=24*(pasteCount.current+1)/g.camera.zoom;
+    let center={x:(bounds.left+bounds.right)/2+offset,y:(bounds.top+bounds.bottom)/2+offset};
+    const half={x:(bounds.right-bounds.left)/2,y:(bounds.bottom-bounds.top)/2};
+    if(g.camera.x+(center.x-half.x)*g.camera.zoom<0||g.camera.x+(center.x+half.x)*g.camera.zoom>rect.width||g.camera.y+(center.y-half.y)*g.camera.zoom<0||g.camera.y+(center.y+half.y)*g.camera.zoom>rect.height)center=worldPoint({x:rect.width/2,y:rect.height/2},g.camera);
+    const cursor=cursorRef.current,underCursor=cursor?document.elementFromPoint(cursor.x,cursor.y):null;
+    if(cursor&&underCursor&&boardRef.current?.contains(underCursor))center=worldPoint({x:cursor.x-rect.left,y:cursor.y-rect.top},g.camera);
+    const pasted=pasteSelection(clip,{width:g.width,height:g.height},center,()=>crypto.randomUUID());
+    dispatch({type:"paste",...pasted});setSelectedIds(pasted.nodes.map(n=>n.id));pasteCount.current++;
+    setCanvasNotice(pasted.nodes.length===1?t.selectionPastedOne:t.selectionPasted.replace("{count}",String(pasted.nodes.length)));boardRef.current?.focus({preventScroll:true});
+  }
+  async function pasteObjects(){
+    let clip=clipboardRef.current;
+    try{const text=await navigator.clipboard.readText();clip=readSelection(text)||clip;}catch{/* Local copies remain usable when browser clipboard access is blocked. */}
+    if(clip)insertSelection(clip);else setCanvasNotice(t.clipboardEmpty);
+  }
+  const editingClipboard=(target:EventTarget)=>target instanceof HTMLElement&&!!target.closest('input,textarea,select,[contenteditable="true"],[role="textbox"]');
+  function handleCopy(event:React.ClipboardEvent){
+    if(editingClipboard(event.target)||!!window.getSelection()?.toString())return;
+    const clip=rememberSelection();if(!clip)return;
+    event.preventDefault();event.clipboardData.setData("text/plain",JSON.stringify(clip));
+  }
+  function handlePaste(event:React.ClipboardEvent){
+    if(editingClipboard(event.target))return;
+    const text=event.clipboardData.getData("text/plain"),clip=readSelection(text)||(!text?clipboardRef.current:null);
+    if(!clip)return;event.preventDefault();insertSelection(clip);
+  }
   function endDrag(event:DragEndEvent) {
     setDragging(null);const rect=boardRef.current?.getBoundingClientRect();if(!rect)return;
     const id=String(event.active.id);
@@ -127,9 +171,9 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
     setDeletedRun(current=>current?.run.id===finished.id?{...current,run:finished}:current);
   }
   function resetCanvas() {
-    dispatch({type:"replace",board:emptyComposition()});setSelectedIds([]);setPickerOpen(false);
+    dispatch({type:"replace",board:emptyComposition()});setSelectedIds([]);setPickerOpen(false);setCanvasNotice("");
     setActiveRunId(null);setReadingId(null);setPendingResultId(null);setTarget("");setRelation("");setNotice("");
-    setResetVersion(version=>version+1);
+    setResetVersion(version=>version+1);boardRef.current?.focus({preventScroll:true});
   }
   function deleteResult(id:string) {
     const run=runs.find(run=>run.id===id);if(!run)return;
@@ -170,7 +214,7 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
     <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e=>{const file=e.target.files?.[0];if(file)void importBoard(file);e.target.value="";}}/>
     <DndContext id="playground-editor" sensors={sensors} autoScroll={false} onDragStart={e=>{setDragging(String(e.active.id));}} onDragEnd={endDrag} onDragCancel={()=>setDragging(null)}>
       <div className="pg-workspace">
-        <div className="pg-canvas-column"><Canvas resetVersion={resetVersion} board={board} locale={locale} selectedIds={selectedNodes.map(n=>n.id)} onSelect={setSelectedIds} onTransform={nodes=>dispatch({type:"transform",updates:nodes.map(({id,x,y,scale,rotation})=>({id,patch:{x,y,scale,rotation}}))})} onRemove={ids=>{dispatch({type:"removeMany",ids});setSelectedIds([]);}} onAdd={()=>setPickerOpen(true)} boardRef={boardRef} geometryRef={geometryRef} pickerOpen={pickerOpen} trayDragging={!!dragging} setPickerOpen={setPickerOpen} overlay={<DragOverlay dropAnimation={null}>{dragGlyph&&<span className="pg-drag-glyph"><EmojiArtwork glyph={dragGlyph}/></span>}</DragOverlay>} toolbar={<div className="pg-canvas-toolbar"><span>{board.nodes.length}/{NODE_LIMIT}</span><div><button aria-label={t.undo} title={t.undo} disabled={!history.past.length} onClick={()=>dispatch({type:"undo"})}><Undo2 size={17}/></button><button aria-label={t.redo} title={t.redo} disabled={!history.future.length} onClick={()=>dispatch({type:"redo"})}><Redo2 size={17}/></button><button aria-label={t.clear} title={t.clearHint} onClick={resetCanvas}><RotateCcw size={16}/></button></div></div>} picker={<><label className="pg-search"><Search size={16}/><input aria-label={t.search} placeholder={locale==="es"?"océano, amor, 🌙…":"ocean, love, 🌙…"} value={query} maxLength={150} onChange={e=>{setQuery(e.target.value);setPage(0);}}/></label><div className="pg-filters"><select aria-label={t.category} value={group??"all"} onChange={e=>{setGroup(e.target.value==="all"?null:Number(e.target.value));setPage(0);}}><option value="all">{t.all}</option>{categories.map(c=><option key={c.id} value={c.id}>{c.icon} {c[locale]}</option>)}</select><select aria-label={t.sort} value={sort} onChange={e=>{setSort(e.target.value);setPage(0);}}><option value="relevance">{t.relevance}</option><option value="alphabetical">{t.alphabetical}</option><option value="unicode">{t.unicode}</option></select></div><div className="pg-palette">{visible.map(emoji=><PaletteEmoji key={emoji.id} emoji={emoji} locale={locale} onAdd={()=>add(emoji)} disabled={board.nodes.length>=NODE_LIMIT}/>)}{!visible.length&&<p>{t.noMatches}</p>}</div><div className="pg-paging"><span>{matches.length} · {currentPage+1}/{pages}</span><div><button aria-label={t.previous} disabled={currentPage===0} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={17}/></button><button aria-label={t.next} disabled={currentPage===pages-1} onClick={()=>setPage(p=>p+1)}><ChevronRight size={17}/></button></div></div></>}/>
+        <div className="pg-canvas-column"><Canvas onUndo={()=>dispatch({type:"undo"})} onRedo={()=>dispatch({type:"redo"})} onReset={resetCanvas} notice={canvasNotice} onCopyEvent={handleCopy} onPasteEvent={handlePaste} onCopy={copyObjects} onPaste={pasteObjects} canPaste={canPaste&&board.nodes.length<NODE_LIMIT} onArrange={direction=>{dispatch({type:"arrange",ids:selectedIds,direction});setCanvasNotice(t.layerChanged);}} resetVersion={resetVersion} board={board} locale={locale} selectedIds={selectedNodes.map(n=>n.id)} onSelect={setSelectedIds} onTransform={nodes=>dispatch({type:"transform",updates:nodes.map(({id,x,y,scale,rotation})=>({id,patch:{x,y,scale,rotation}}))})} onRemove={ids=>{dispatch({type:"removeMany",ids});setSelectedIds([]);}} onAdd={()=>setPickerOpen(true)} boardRef={boardRef} geometryRef={geometryRef} pickerOpen={pickerOpen} trayDragging={!!dragging} setPickerOpen={setPickerOpen} overlay={<DragOverlay dropAnimation={null}>{dragGlyph&&<span className="pg-drag-glyph"><EmojiArtwork glyph={dragGlyph}/></span>}</DragOverlay>} toolbar={<div className="pg-canvas-toolbar"><span>{board.nodes.length}/{NODE_LIMIT}</span><div><ToolbarTooltip label={t.undoHint} shortcut="Z"><button aria-label={t.undo} aria-keyshortcuts="Control+Z Meta+Z" disabled={!history.past.length} onClick={()=>dispatch({type:"undo"})}><Undo2 size={17}/></button></ToolbarTooltip><ToolbarTooltip label={t.redoHint} shortcut="Shift+Z"><button aria-label={t.redo} aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" disabled={!history.future.length} onClick={()=>dispatch({type:"redo"})}><Redo2 size={17}/></button></ToolbarTooltip><ToolbarTooltip label={t.clearHint} shortcut="R"><button aria-label={t.clear} aria-keyshortcuts="Control+R Meta+R" onClick={resetCanvas}><RotateCcw size={16}/></button></ToolbarTooltip></div></div>} picker={<EmojiPicker sceneEmojiIds={board.nodes.map(n=>n.emojiId)} locale={locale} state={pickerState} onChange={setPickerState} onAdd={add} disabled={board.nodes.length>=NODE_LIMIT}/>}/>
           <p className="pg-hint">{t.hint}</p><p className={`pg-save ${saveStatus==="failed"?"error":""}`} role="status">{readFailed?t.readFailed:saveStatus==="saving"?t.saving:saveStatus==="failed"?t.failed:t.saved}</p>
 
         </div>

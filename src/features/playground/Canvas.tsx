@@ -2,29 +2,42 @@
 
 import {useEffect,useRef,useState,type ReactNode,type PointerEvent} from "react";
 import {useDroppable} from "@dnd-kit/core";
-import {Expand,Minimize,Plus,Scan,MousePointer2,MoveDiagonal2,RotateCw,Trash2,X,ZoomIn,ZoomOut} from "lucide-react";
-import {type BoardNode,type Composition} from "./model";
+import {Copy,Expand,Minimize,Plus,Scan,MousePointer2,MoveDiagonal2,RotateCw,Trash2,X,ZoomIn,ZoomOut} from "lucide-react";
+import {type ArrangeDirection,type BoardNode,type Composition} from "./model";
 import {playgroundLabels} from "./labels";
 import EmojiArtwork from "./emoji-artwork";
 import type {Locale} from "@/lib/types";
-import {fitCamera,GLYPH_SIZE,maxZoom,MIN_ZOOM,worldPoint,zoomAt,type Camera,type Point} from "./camera";
+import {boundedZoom,fitCamera,resizeCamera,steppedZoom,GLYPH_SIZE,MAX_ZOOM,MIN_ZOOM,worldPoint,zoomAt,type Camera,type Point} from "./camera";
+import {CanvasActions,LayerPanel} from "./CanvasActions";
+import ToolbarTooltip from "./ToolbarTooltip";
 
 import {resizeCursor,rotatePoint,selectionBounds,selectionFrame,transformNodes,type Bounds,type SelectionFrame} from "./transforms";
 
 import {emojiShape} from "./emoji-shape";
-import {pointInShape,pointerEdgeTolerance,shapeIntersectsArea,type GlyphShape} from "./shapes";
+import {paintedBounds,pointInShape,pointerEdgeTolerance,shapeIntersectsArea,type GlyphShape} from "./shapes";
 
 export type CanvasGeometry={camera:Camera;width:number;height:number};
-type Props={resetVersion:number;board:Composition;locale:Locale;selectedIds:string[];onSelect:(ids:string[])=>void;onTransform:(nodes:BoardNode[])=>void;onRemove:(ids:string[])=>void;onAdd:()=>void;picker:ReactNode;overlay:ReactNode;toolbar:ReactNode;boardRef:React.RefObject<HTMLDivElement|null>;geometryRef:React.RefObject<CanvasGeometry>;pickerOpen:boolean;trayDragging:boolean;setPickerOpen:(value:boolean)=>void};
+type Props={onUndo:()=>void;onRedo:()=>void;onReset:()=>void;notice:string;onCopyEvent:(e:React.ClipboardEvent)=>void;onPasteEvent:(e:React.ClipboardEvent)=>void;onCopy:()=>void;onPaste:()=>void;canPaste:boolean;onArrange:(direction:ArrangeDirection)=>void;resetVersion:number;board:Composition;locale:Locale;selectedIds:string[];onSelect:(ids:string[])=>void;onTransform:(nodes:BoardNode[])=>void;onRemove:(ids:string[])=>void;onAdd:()=>void;picker:ReactNode;overlay:ReactNode;toolbar:ReactNode;boardRef:React.RefObject<HTMLDivElement|null>;geometryRef:React.RefObject<CanvasGeometry>;pickerOpen:boolean;trayDragging:boolean;setPickerOpen:(value:boolean)=>void};
 type ObjectGesture={id:number;kind:"move"|"resize"|"rotate";start:Point;nodes:BoardNode[];preview:BoardNode[];center:Point;moved:boolean;keepSelection:boolean;lastAngle:number;angle:number;element:HTMLElement;clickId:string|null;additive:boolean;frame:SelectionFrame};
-export default function Canvas({resetVersion,board,locale,selectedIds,onSelect,onTransform,onRemove,onAdd,picker,overlay,toolbar,boardRef,geometryRef,pickerOpen,trayDragging,setPickerOpen}:Props) {
+export default function Canvas({onUndo,onRedo,onReset,notice,onCopyEvent,onPasteEvent,onCopy,onPaste,canPaste,onArrange,resetVersion,board,locale,selectedIds,onSelect,onTransform,onRemove,onAdd,picker,overlay,toolbar,boardRef,geometryRef,pickerOpen,trayDragging,setPickerOpen}:Props) {
   const t=playgroundLabels[locale];
-  const stageRef=useRef<HTMLDivElement|null>(null),pickerButton=useRef<HTMLButtonElement|null>(null),wasPickerOpen=useRef(false),restorePickerFocus=useRef(true);
+  const stageRef=useRef<HTMLDivElement|null>(null),toolbarRef=useRef<HTMLDivElement|null>(null),pickerButton=useRef<HTMLButtonElement|null>(null),wasPickerOpen=useRef(false),restorePickerFocus=useRef(true);
+  const [toolbarHeight,setToolbarHeight]=useState(50);
+  useEffect(()=>{const toolbar=toolbarRef.current;if(!toolbar)return;const observer=new ResizeObserver(()=>setToolbarHeight(toolbar.getBoundingClientRect().height));observer.observe(toolbar);return()=>observer.disconnect();},[]);
   const {setNodeRef,isOver}=useDroppable({id:"composition-board"});
   const [camera,setCamera]=useState<Camera>({x:0,y:0,zoom:1}),[size,setSize]=useState({width:600,height:500});
   const [world,setWorld]=useState({width:600,height:500});
+  const [zoomReference,setZoomReference]=useState(1);
+  const referenceRef=useRef(1);referenceRef.current=zoomReference;
+  const relativeZoom=camera.zoom/zoomReference;
+  function reference(value:number){referenceRef.current=value;setZoomReference(value);}
   const cameraRef=useRef(camera),sizeRef=useRef(size);
   const [fullscreen,setFullscreen]=useState(false),[panning,setPanning]=useState(false),[objectDragging,setObjectDragging]=useState(false);
+  const [layersOpen,setLayersOpen]=useState(false),[viewNotice,setViewNotice]=useState("");
+  const fullscreenRef=useRef(false),previousFullscreen=useRef(false),embeddedView=useRef<{camera:Camera;size:{width:number;height:number};reference:number}|null>(null),fitActive=useRef(false);
+  const fitRef=useRef<()=>void>(()=>{});
+  fullscreenRef.current=fullscreen;
+  useEffect(()=>{setViewNotice("");},[notice]);
   const pan=useRef<{id:number;start:Point;camera:Camera;moved:boolean;selecting:boolean;additive:boolean;selection:string[]}|null>(null);
   const gesture=useRef<ObjectGesture|null>(null);
   const [preview,setPreview]=useState<BoardNode[]|null>(null),[area,setArea]=useState<Bounds|null>(null),[selectMode,setSelectMode]=useState(false),[shiftPressed,setShiftPressed]=useState(false);
@@ -63,7 +76,7 @@ export default function Canvas({resetVersion,board,locale,selectedIds,onSelect,o
   function selectObject(id:string,additive=false) {onSelect(additive?selectedIds.includes(id)?selectedIds.filter(v=>v!==id):[...selectedIds,id]:selectedIds.length===1&&selectedIds[0]===id?[]:[id]);}
   function startObject(e:PointerEvent<HTMLElement>,node:BoardNode|null,kind:ObjectGesture["kind"]) {
     if(e.button!==0||!e.isPrimary||pan.current||gesture.current)return;
-    e.stopPropagation();e.preventDefault();
+    e.stopPropagation();e.preventDefault();fitActive.current=false;setViewNotice("");
     const group=node?(selectedIds.includes(node.id)&&selectedIds.length>1?selected:[node]):selected;
     const frame=selectionFrame(group,world);if(!frame)return;
     (node?boardRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(node.id)}"]`):kind!=="move"?e.currentTarget:boardRef.current)?.focus({preventScroll:true});
@@ -98,7 +111,9 @@ export default function Canvas({resetVersion,board,locale,selectedIds,onSelect,o
     const g=gesture.current;gesture.current=null;
     if(g?.element.hasPointerCapture(g.id))g.element.releasePointerCapture(g.id);
     pan.current=null;setPreview(null);setObjectDragging(false);setArea(null);setSelectMode(false);setPanning(false);setShiftPressed(false);
-    setCamera({x:0,y:0,zoom:1});
+    setCamera({x:0,y:0,zoom:1});reference(1);
+    fitActive.current=false;setLayersOpen(false);setViewNotice("");
+    if(embeddedView.current){embeddedView.current.camera={x:0,y:0,zoom:1};embeddedView.current.reference=1;}
   },[resetVersion]);
   function keyTransform(kind:"resize"|"rotate",e:React.KeyboardEvent<HTMLButtonElement>) {
     if(!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key))return;
@@ -121,7 +136,11 @@ export default function Canvas({resetVersion,board,locale,selectedIds,onSelect,o
     const observer=new ResizeObserver(()=>{
       const width=el.clientWidth,height=el.clientHeight;if(!width||!height)return;
       if(!initialized){initialized=true;setWorld({width,height});setCamera({x:0,y:0,zoom:1});}
-      else {const old=sizeRef.current;setCamera(c=>zoomAt({...c,x:c.x+(width-old.width)/2,y:c.y+(height-old.height)/2},{x:width/2,y:height/2},Math.min(c.zoom,maxZoom(width,height))));}
+      else {const old=sizeRef.current,next={width,height},saved=embeddedView.current;
+        if(previousFullscreen.current&&!fullscreenRef.current&&saved){setCamera(resizeCamera(saved.camera,saved.size,next));reference(saved.reference*Math.min(width/saved.size.width,height/saved.size.height));embeddedView.current=null;fitActive.current=false;}
+        else {setCamera(c=>resizeCamera(c,old,next));reference(referenceRef.current*Math.min(width/old.width,height/old.height));}
+      }
+      previousFullscreen.current=fullscreenRef.current;
       sizeRef.current={width,height};setSize({width,height});
     });observer.observe(el);return()=>observer.disconnect();
   },[boardRef]);
@@ -130,15 +149,16 @@ export default function Canvas({resetVersion,board,locale,selectedIds,onSelect,o
     function wheel(e:WheelEvent) {
       // Floating controls keep their own scrolling; the white canvas owns zoom.
       if(gesture.current||pan.current)return;
+      fitActive.current=false;
       e.preventDefault();const rect=el!.getBoundingClientRect();
       const delta=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?rect.height:1);
-      const zoom=Math.min(maxZoom(rect.width,rect.height),Math.max(MIN_ZOOM,cameraRef.current.zoom*Math.exp(-delta*.002)));
+      const zoom=boundedZoom(cameraRef.current.zoom*Math.exp(-delta*.002),referenceRef.current);
       setCamera(zoomAt(cameraRef.current,{x:e.clientX-rect.left,y:e.clientY-rect.top},zoom));
     }
     el.addEventListener("wheel",wheel,{passive:false});return()=>el.removeEventListener("wheel",wheel);
   },[boardRef,objectDragging]);
   useEffect(()=>{
-    if(pickerOpen){restorePickerFocus.current=true;stageRef.current?.scrollIntoView({block:"nearest",behavior:"instant"});stageRef.current?.querySelector<HTMLInputElement>(".pg-search input")?.focus({preventScroll:true});}
+    if(pickerOpen){setLayersOpen(false);restorePickerFocus.current=true;stageRef.current?.scrollIntoView({block:"nearest",behavior:"instant"});stageRef.current?.querySelector<HTMLInputElement>(".pg-search input")?.focus({preventScroll:true});}
     else if(wasPickerOpen.current&&restorePickerFocus.current)pickerButton.current?.focus({preventScroll:true});
     wasPickerOpen.current=pickerOpen;
   },[pickerOpen]);
@@ -152,6 +172,16 @@ export default function Canvas({resetVersion,board,locale,selectedIds,onSelect,o
     document.addEventListener("pointerdown",outside,true);return()=>document.removeEventListener("pointerdown",outside,true);
   },[pickerOpen,trayDragging,setPickerOpen]);
   useEffect(()=>{
+    if(!layersOpen)return;
+    function outside(event:globalThis.PointerEvent){
+      const target=event.target as Node;
+      if(stageRef.current?.querySelector(".pg-layers")?.contains(target)||stageRef.current?.querySelector('[aria-controls="pg-layers"]')?.contains(target))return;
+      // Let the clicked control or canvas receive focus and its normal action.
+      setLayersOpen(false);
+    }
+    document.addEventListener("pointerdown",outside,true);return()=>document.removeEventListener("pointerdown",outside,true);
+  },[layersOpen]);
+  useEffect(()=>{
     if(!fullscreen)return;
     const overflow=document.body.style.overflow;document.body.style.overflow="hidden";
     return()=>{document.body.style.overflow=overflow;};
@@ -162,10 +192,14 @@ export default function Canvas({resetVersion,board,locale,selectedIds,onSelect,o
   },[]);
   async function toggleFullscreen() {
     if(fullscreen){if(document.fullscreenElement)await document.exitFullscreen();setFullscreen(false);}
-    else {setFullscreen(true);try{await stageRef.current?.requestFullscreen?.();}catch{/* Viewport focus mode also works where native fullscreen is unavailable. */}}
+    else {embeddedView.current={camera:{...cameraRef.current},size:{...sizeRef.current},reference:referenceRef.current};setFullscreen(true);try{await stageRef.current?.requestFullscreen?.();}catch{/* Viewport focus mode also works where native fullscreen is unavailable. */}}
   }
-  function zoomButton(factor:number) {setCamera(c=>zoomAt(c,{x:size.width/2,y:size.height/2},Math.max(MIN_ZOOM,Math.min(maxZoom(size.width,size.height),c.zoom*factor))));}
-  function fit() {const b=selectionBounds(board.nodes,world);setCamera(fitCamera(b?[{x:b.left,y:b.top},{x:b.right,y:b.bottom}]:[],size.width,size.height));}
+  function zoomButton(direction:1|-1) {fitActive.current=false;setViewNotice("");setCamera(c=>zoomAt(c,{x:size.width/2,y:size.height/2},zoomReference*steppedZoom(c.zoom/zoomReference,direction)));}
+  function fit() {fitActive.current=true;const b=paintedBounds(board.nodes,world,shapes),fitted=fitCamera(b?[{x:b.left,y:b.top},{x:b.right,y:b.bottom}]:[],size.width,size.height);reference(fitted.zoom);setCamera(fitted);setViewNotice(board.nodes.length?t.fitDone:"");}
+  fitRef.current=fit;
+  useEffect(()=>{if(fitActive.current)fitRef.current();},[shapes,size]);
+  useEffect(()=>{if(layersOpen){const panel=stageRef.current?.querySelector<HTMLElement>(".pg-layers");(panel?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')||panel?.querySelector<HTMLButtonElement>("button"))?.focus({preventScroll:true});}},[layersOpen]);
+  function closeLayers(){setLayersOpen(false);stageRef.current?.querySelector<HTMLButtonElement>('[aria-controls="pg-layers"]')?.focus();}
   const frame=selectionFrame(selected,world);
   const screenFrame=frame?{center:{x:camera.x+frame.center.x*camera.zoom,y:camera.y+frame.center.y*camera.zoom},width:frame.width*camera.zoom+16,height:frame.height*camera.zoom+16,rotation:frame.rotation}:null;
   function framePoint(x:number,y:number) {
@@ -179,16 +213,48 @@ export default function Canvas({resetVersion,board,locale,selectedIds,onSelect,o
   const frameStyle=screenFrame?{left:screenFrame.center.x,top:screenFrame.center.y,width:screenFrame.width,height:screenFrame.height,transform:`translate(-50%, -50%) rotate(${screenFrame.rotation}deg)`}:undefined;
   const rotationAnchor=screenFrame?framePoint(0,-screenFrame.height/2):null;
   const rotationControl=screenFrame?controlPoint(0,-screenFrame.height/2-30):null;
+  const deleteControl=screenFrame?controlPoint(screenFrame.width/2+12,-screenFrame.height/2-12):null;
+  const resizeControl=screenFrame?controlPoint(screenFrame.width/2+12,screenFrame.height/2+12):null;
+  function copyControl(){
+    const ideal=controlPoint(screenFrame!.width/2+12,-screenFrame!.height/2+24),occupied=[deleteControl!,resizeControl!,rotationControl!];
+    for(const radius of [0,36,72,108])for(const [dx,dy] of [[0,1],[-1,0],[0,-1],[1,0],[-1,1],[-1,-1],[1,1],[1,-1]]){
+      const candidate={left:Math.max(18,Math.min(size.width-18,ideal.left+dx*radius)),top:Math.max(18,Math.min(size.height-18,ideal.top+dy*radius))};
+      if(occupied.every(p=>Math.hypot(p.left-candidate.left,p.top-candidate.top)>=34))return candidate;
+    }
+    return ideal;
+  }
   const visibleBounds=selectionBounds(selected,world);
   const selectionVisible=visibleBounds&&(gesture.current||camera.x+visibleBounds.right*camera.zoom>=0&&camera.x+visibleBounds.left*camera.zoom<=size.width&&camera.y+visibleBounds.bottom*camera.zoom>=0&&camera.y+visibleBounds.top*camera.zoom<=size.height);
-  return <div ref={stageRef} className={`pg-stage ${fullscreen?"is-fullscreen":""} ${objectDragging?`transforming ${gesture.current?.kind==="move"?"object-dragging":gesture.current?.kind==="resize"?"resizing":"rotating"}`:""}`} style={{"--pg-resize-cursor":resizeCursor(screenFrame?.rotation??0)} as React.CSSProperties} role={fullscreen?"dialog":undefined} aria-modal={fullscreen?true:undefined} aria-label={fullscreen?t.canvas:undefined}
+  return <div ref={stageRef} onCopy={onCopyEvent} onPaste={onPasteEvent} className={`pg-stage ${fullscreen?"is-fullscreen":""} ${objectDragging?`transforming ${gesture.current?.kind==="move"?"object-dragging":gesture.current?.kind==="resize"?"resizing":"rotating"}`:""}`} style={{"--pg-resize-cursor":resizeCursor(screenFrame?.rotation??0)} as React.CSSProperties} role={fullscreen?"dialog":undefined} aria-modal={fullscreen?true:undefined} aria-label={fullscreen?t.canvas:undefined}
     onKeyDown={e=>{
-      if(e.key==="Escape"){e.preventDefault();finishObject(undefined,true);pan.current=null;setPanning(false);setArea(null);onSelect([]);if(pickerOpen){setPickerOpen(false);pickerButton.current?.focus();}else if(fullscreen&&!document.fullscreenElement){setFullscreen(false);pickerButton.current?.focus();}}
+      if(e.key==="Escape"){e.preventDefault();finishObject(undefined,true);pan.current=null;setPanning(false);setArea(null);onSelect([]);if(pickerOpen){setPickerOpen(false);pickerButton.current?.focus();}else if(layersOpen)closeLayers();else if(fullscreen&&!document.fullscreenElement){setFullscreen(false);pickerButton.current?.focus();}}
       const target=e.target as HTMLElement;
+      if(!e.defaultPrevented&&!e.nativeEvent.isComposing&&!e.altKey&&(e.ctrlKey||e.metaKey)&&!target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]')){
+        const key=e.key.toLowerCase();
+        if(key==="z"||key==="r"&&!e.shiftKey){
+          e.preventDefault();finishObject(undefined,true);pan.current=null;setPanning(false);setArea(null);
+          if(key==="z"){if(e.shiftKey)onRedo();else onUndo();}else if(!e.repeat)onReset();
+          return;
+        }
+      }
       if((e.key==="Delete"||e.key==="Backspace")&&selected.length&&!target.matches("input,textarea,select,[contenteditable=true]")){e.preventDefault();onRemove(selected.map(n=>n.id));}
-      if(fullscreen&&e.key==="Tab") {const focusable=Array.from(stageRef.current!.querySelectorAll<HTMLElement>('button:not(:disabled),input,select,[tabindex="0"]')).filter(el=>el.getClientRects().length);const first=focusable[0],last=focusable.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}
+      if(fullscreen&&e.key==="Tab") {const focusable=Array.from(stageRef.current!.querySelectorAll<HTMLElement>('button:not(:disabled),input,select,summary,[tabindex="0"]')).filter(el=>el.tabIndex>=0&&el.getClientRects().length);const first=focusable[0],last=focusable.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}
     }}>
-    <div className="pg-space-toolbar">{!!board.nodes.length&&<button ref={pickerButton} className="pg-picker-toggle" aria-label={t.openPicker} aria-expanded={pickerOpen} onClick={()=>setPickerOpen(!pickerOpen)}><Plus size={17}/><span>{t.addEmoji}</span></button>}<div className="pg-space-history">{toolbar}</div><div className="pg-view-tools"><button className="pg-selection-tool" aria-label={t.selectArea} title={t.selectAreaHint} aria-pressed={selectMode} onClick={()=>setSelectMode(!selectMode)}><MousePointer2 size={17}/><span>{t.selectArea}</span></button><button aria-label={t.zoomOut} title={t.zoomOut} disabled={camera.zoom<=MIN_ZOOM} onClick={()=>zoomButton(1/1.3)}><ZoomOut size={17}/></button><output aria-label={t.zoomLevel}>{Math.round(camera.zoom*100)}%</output><button aria-label={t.zoomIn} title={t.zoomIn} disabled={camera.zoom>=maxZoom(size.width,size.height)} onClick={()=>zoomButton(1.3)}><ZoomIn size={17}/></button><button aria-label={t.fit} title={t.fit} onClick={fit}><Scan size={17}/></button><button aria-label={fullscreen?t.exitFullscreen:t.fullscreen} title={fullscreen?t.exitFullscreen:t.fullscreen} onClick={()=>void toggleFullscreen()}>{fullscreen?<Minimize size={17}/>:<Expand size={17}/>}</button></div></div>
+    <div ref={toolbarRef} className="pg-space-toolbar">
+      {!!board.nodes.length&&<ToolbarTooltip label={t.addEmojiHint}><button ref={pickerButton} className="pg-picker-toggle" aria-label={t.openPicker} aria-expanded={pickerOpen} onClick={()=>setPickerOpen(!pickerOpen)}><Plus size={17}/><span>{t.addEmoji}</span></button></ToolbarTooltip>}
+      <div className="pg-space-history">{toolbar}</div>
+      <CanvasActions nodes={board.nodes} selectedIds={selectedIds} locale={locale} onCopy={onCopy} onPaste={onPaste} canPaste={canPaste} onArrange={onArrange} layersOpen={layersOpen} onLayers={()=>{setLayersOpen(!layersOpen);setPickerOpen(false);}}/>
+      <div className="pg-view-tools">
+        <ToolbarTooltip label={t.selectAreaHint}><button className="pg-selection-tool" aria-label={t.selectArea} aria-pressed={selectMode} onClick={()=>setSelectMode(!selectMode)}><MousePointer2 size={17}/></button></ToolbarTooltip>
+        <div className="pg-action-group pg-zoom-tools" role="group" aria-label={t.zoomTools}>
+          <ToolbarTooltip label={t.zoomOutHint}><button aria-label={t.zoomOut} disabled={relativeZoom<=MIN_ZOOM+1e-8} onClick={()=>zoomButton(-1)}><ZoomOut size={17}/></button></ToolbarTooltip>
+          <output aria-label={t.zoomLevel}>{Math.round(relativeZoom*100)}%</output>
+          <ToolbarTooltip label={t.zoomInHint}><button aria-label={t.zoomIn} disabled={relativeZoom>=MAX_ZOOM-1e-8} onClick={()=>zoomButton(1)}><ZoomIn size={17}/></button></ToolbarTooltip>
+          <ToolbarTooltip label={t.fitHint}><button aria-label={t.fit} onClick={fit}><Scan size={17}/></button></ToolbarTooltip>
+        </div>
+        <ToolbarTooltip label={fullscreen?t.exitFullscreenHint:t.fullscreenHint}><button aria-label={fullscreen?t.exitFullscreen:t.fullscreen} onClick={()=>void toggleFullscreen()}>{fullscreen?<Minimize size={17}/>:<Expand size={17}/>}</button></ToolbarTooltip>
+      </div>
+    </div>
     <div ref={el=>{setNodeRef(el);boardRef.current=el;}} role="region" aria-label={t.canvas} tabIndex={0} data-shapes-ready={board.nodes.every(n=>shapes.has(n.glyph))} className={`pg-board ${dragReady?"drag-ready":""} ${isOver?"over":""} ${panning?"panning":""} ${selectMode?"select-mode":""} ${shiftPressed?"shift-select":""}`} onPointerEnter={e=>setShiftPressed(e.shiftKey)} onPointerLeave={()=>setDragReady(false)} onPointerDown={e=>{
       if(e.button!==0||!e.isPrimary||gesture.current)return;
       const p=point({x:e.clientX,y:e.clientY}),node=hitObject(p,e.pointerType);
@@ -203,7 +269,7 @@ export default function Canvas({resetVersion,board,locale,selectedIds,onSelect,o
       if(g?.id!==e.pointerId){const p=point({x:e.clientX,y:e.clientY});setDragReady(!!hitObject(p,e.pointerType)||!e.shiftKey&&insideSelection(p));return;}
       const dx=e.clientX-g.start.x,dy=e.clientY-g.start.y;if(Math.hypot(dx,dy)>=6)g.moved=true;
       if(g.selecting){const a=localPoint(g.start),b=localPoint({x:e.clientX,y:e.clientY});setArea({left:Math.min(a.x,b.x),right:Math.max(a.x,b.x),top:Math.min(a.y,b.y),bottom:Math.max(a.y,b.y)});}
-      else setCamera({...g.camera,x:g.camera.x+dx,y:g.camera.y+dy});
+      else {fitActive.current=false;setViewNotice("");setCamera({...g.camera,x:g.camera.x+dx,y:g.camera.y+dy});}
     }} onPointerUp={e=>{
       if(gesture.current?.element===e.currentTarget){finishObject(e);return;}
       const g=pan.current;if(g?.id!==e.pointerId)return;pan.current=null;setPanning(false);setArea(null);
@@ -216,7 +282,7 @@ export default function Canvas({resetVersion,board,locale,selectedIds,onSelect,o
       {/* Render at display size: scaling a cached composited layer can blur even vector artwork. */}
       <div className="pg-world" style={{width:world.width*camera.zoom,height:world.height*camera.zoom,transform:`translate(${camera.x}px, ${camera.y}px)`}}>
         <svg className="pg-edges" aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><marker id="pg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a68cf4"/></marker></defs>{board.edges.map(e=>{const a=nodes.find(n=>n.id===e.source)!,b=nodes.find(n=>n.id===e.target)!;return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#b9a4e0" strokeWidth=".35" markerEnd="url(#pg-arrow)"/>;})}</svg>
-        {nodes.map(node=><button key={node.id} data-id={node.id} data-glyph={node.glyph} data-scale={node.scale} data-rotation={node.rotation} className={`pg-node ${selectedIds.includes(node.id)?"selected":""} ${objectDragging&&preview?.some(p=>p.id===node.id)?"dragging":""}`} aria-label={`${node.glyph} ${node.meaning}`} aria-pressed={selectedIds.includes(node.id)} style={{width:60*camera.zoom*node.scale,height:60*camera.zoom*node.scale,left:`${node.x}%`,top:`${node.y}%`,transform:`translate(-50%, -50%) rotate(${node.rotation}deg)`}}
+        {nodes.map((node,index)=><button key={node.id} data-id={node.id} data-glyph={node.glyph} data-scale={node.scale} data-rotation={node.rotation} className={`pg-node ${selectedIds.includes(node.id)?"selected":""} ${objectDragging&&preview?.some(p=>p.id===node.id)?"dragging":""}`} aria-label={`${node.glyph} ${node.meaning}`} aria-pressed={selectedIds.includes(node.id)} style={{zIndex:index+1,width:60*camera.zoom*node.scale,height:60*camera.zoom*node.scale,left:`${node.x}%`,top:`${node.y}%`,transform:`translate(-50%, -50%) rotate(${node.rotation}deg)`}}
           onClick={e=>{if(e.detail===0)selectObject(node.id,e.shiftKey);}}
           onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();selectObject(node.id,e.shiftKey);}else if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){e.preventDefault();const group=selectedIds.includes(node.id)?selected:[node];onTransform(transformNodes(group,world,{x:0,y:0},{dx:e.key==="ArrowRight"?world.width*.02:e.key==="ArrowLeft"?-world.width*.02:0,dy:e.key==="ArrowDown"?world.height*.02:e.key==="ArrowUp"?-world.height*.02:0}));}}}>
           <span style={{fontSize:GLYPH_SIZE*camera.zoom*node.scale}}><EmojiArtwork glyph={node.glyph}/></span>
@@ -229,13 +295,16 @@ export default function Canvas({resetVersion,board,locale,selectedIds,onSelect,o
         <svg className="pg-selection-connector" aria-hidden="true" viewBox={`0 0 ${size.width} ${size.height}`}><line x1={rotationAnchor!.left} y1={rotationAnchor!.top} x2={rotationControl!.left} y2={rotationControl!.top}/></svg>
         <div className="pg-group-bounds pg-selection-bounds" data-rotation={screenFrame.rotation} data-center-x={screenFrame.center.x} data-center-y={screenFrame.center.y} aria-hidden="true" style={frameStyle}/>
         <button className="pg-object-delete" aria-label={selected.length===1?t.deleteObject:t.deleteGroup} title={selected.length===1?t.deleteObject:t.deleteGroup} style={controlPoint(screenFrame.width/2+12,-screenFrame.height/2-12)} onPointerDown={e=>e.stopPropagation()} onClick={()=>onRemove(selected.map(n=>n.id))}><Trash2 size={14}/></button>
+        <ToolbarTooltip asChild label={selected.length===1?t.copyObject:t.copyGroup} shortcut="C"><button className="pg-object-copy" aria-label={selected.length===1?t.copyObject:t.copyGroup} style={copyControl()} onPointerDown={e=>e.stopPropagation()} onClick={onCopy}><Copy size={14}/></button></ToolbarTooltip>
         <button className="pg-transform-handle resize" aria-label={t.resizeSelection} title={t.resizeHint} style={{...controlPoint(screenFrame.width/2+12,screenFrame.height/2+12),cursor:resizeCursor(screenFrame.rotation)}} onPointerDown={e=>startObject(e,null,"resize")} onPointerMove={moveObject} onPointerUp={e=>finishObject(e)} onPointerCancel={e=>finishObject(e,true)} onLostPointerCapture={e=>finishObject(e,true)} onKeyDown={e=>keyTransform("resize",e)}><MoveDiagonal2 size={15} style={{transform:`rotate(${screenFrame.rotation}deg)`}}/></button>
         <button className="pg-transform-handle rotate" aria-label={t.rotateSelection} title={t.rotateHint} style={rotationControl!} onPointerDown={e=>startObject(e,null,"rotate")} onPointerMove={moveObject} onPointerUp={e=>finishObject(e)} onPointerCancel={e=>finishObject(e,true)} onLostPointerCapture={e=>finishObject(e,true)} onKeyDown={e=>keyTransform("rotate",e)}><RotateCw size={15} style={{transform:`rotate(${screenFrame.rotation}deg)`}}/></button>
       </>}
 
-      <div className="pg-space-caption" aria-hidden="true">{selectMode?t.selectAreaHint:t.spaceHint}</div>
+      {!fitActive.current&&<div className="pg-space-caption" aria-hidden="true">{selectMode?t.selectAreaHint:t.spaceHint}</div>}
+      <output className={`pg-canvas-notice ${viewNotice?"pg-visually-hidden":""}`} role="status" aria-live="polite">{viewNotice||notice}</output>
     </div>
-    {pickerOpen&&<div className="pg-floating-library pg-panel" role="dialog" aria-label={t.library}><div className="pg-picker-heading"><h2><Plus size={16}/>{t.library}</h2><button aria-label={t.closePicker} onClick={()=>{setPickerOpen(false);pickerButton.current?.focus();}}><X size={16}/></button></div>{picker}<p className="pg-emoji-credit"><a href="https://github.com/googlefonts/noto-emoji/tree/v2.051" target="_blank" rel="noreferrer">Noto Emoji</a> · <a href="https://openfontlicense.org/" target="_blank" rel="noreferrer">OFL 1.1</a></p></div>}
+    {layersOpen&&<LayerPanel style={{top:toolbarHeight+12,maxHeight:`calc(100% - ${toolbarHeight+24}px)`}} nodes={board.nodes} selectedIds={selectedIds} locale={locale} onSelect={onSelect} onClose={closeLayers}/>}
+    {pickerOpen&&<div className="pg-floating-library pg-panel" style={{top:toolbarHeight+12,maxHeight:`calc(100% - ${toolbarHeight+24}px)`}} role="dialog" aria-label={t.library}><div className="pg-picker-heading"><h2><Plus size={16}/>{t.library}</h2><button aria-label={t.closePicker} onClick={()=>{setPickerOpen(false);pickerButton.current?.focus();}}><X size={16}/></button></div>{picker}<p className="pg-emoji-credit"><a href="https://github.com/googlefonts/noto-emoji/tree/v2.051" target="_blank" rel="noreferrer">Noto Emoji</a> · <a href="https://openfontlicense.org/" target="_blank" rel="noreferrer">OFL 1.1</a></p></div>}
     {overlay}
   </div>;
 }
