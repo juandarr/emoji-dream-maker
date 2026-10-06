@@ -175,7 +175,7 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
 
         </div>
         <aside ref={resultsRef} className="pg-output" aria-label={t.result}>
-          {latestRun&&<div className="pg-output-heading"><ReadingButton locale={locale} onClick={()=>setReadingId(latestRun.id)}/></div>}
+          {latestRun&&<ReadingButton locale={locale} onClick={()=>setReadingId(latestRun.id)}/>}
           {latestRun?resultContent(latestRun):<StoryPage><span className="pg-story-kicker">{s.chapter}</span><StorySymbols nodes={board.nodes} locale={locale}/><h3 className="pg-story-title">{s.blank}</h3><div className="pg-story-divider" aria-hidden="true"><span>✧</span></div><p className="pg-story-invitation">{s.blankHint}</p><Feather className="pg-story-feather" size={36}/><span className="pg-story-end" aria-hidden="true">❧</span></StoryPage>}
         </aside>
       </div>
