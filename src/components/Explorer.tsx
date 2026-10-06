@@ -5,7 +5,7 @@ import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, getClientRect, 
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { AnimatePresence } from "motion/react";
 import dynamic from "next/dynamic";
-import { ArrowRight, ChevronLeft, ChevronRight, Compass, Grid2X2, Heart, History, List, Moon, Shapes, Orbit, Search, Shuffle, Trash2, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Compass, Grid2X2, Heart, History, List, Moon, Shapes, Orbit, Search, Shuffle, Trash2, X } from "lucide-react";
 import { catalog, defaultTopic, categories, constellationPositions, emojiById, searchCatalog } from "@/lib/catalog";
 import type { ConstellationPosition } from "@/lib/catalog";
 import { messages } from "@/lib/i18n";
@@ -104,10 +104,14 @@ export default function Explorer() {
       <aside className="sidebar">
         <a className="brand" href="/" aria-label="Dream Maker"><span className="brand-icon"><img src="/icon.svg" width={40} height={40} alt=""/></span><span>dream<span className="brand-light">maker</span></span></a>
         <div className="sidebar-body"><nav aria-label={t.discover}>
-          <button aria-current={tab==="discover"?"page":undefined} title={t.discover} className={`nav-discover ${tab==="discover"?"active":""}`} onClick={()=>setTab("discover")}><Compass size={19}/>{t.discover}<span className="nav-active-dot"/></button>
+          <div className="discovery-menu">
+            <button aria-current={tab==="discover"?"page":undefined} title={t.discover} className={`nav-discover ${tab==="discover"?"active":""} ${tab==="favorites"||tab==="history"?"in-section":""}`} onClick={()=>setTab("discover")}><Compass size={19}/>{t.discover}<ChevronDown className="nav-group-chevron" size={14}/><span className="nav-active-dot"/></button>
+            <div className="discovery-subnav" role="group" aria-label={t.discover}>
+              <button aria-current={tab==="favorites"?"page":undefined} title={t.favorites} className={`nav-favorites ${tab==="favorites"?"active":""}`} onClick={()=>setTab("favorites")}><Heart size={19}/>{t.favorites}<span className="nav-count">{prefs.favorites.length}</span></button>
+              <button aria-current={tab==="history"?"page":undefined} title={t.history} className={`nav-history ${tab==="history"?"active":""}`} onClick={()=>setTab("history")}><History size={19}/>{t.history}<span className="nav-count">{prefs.history.length}</span></button>
+            </div>
+          </div>
           <button aria-current={tab==="playground"?"page":undefined} title={playgroundLabels[locale].name} className={`nav-playground ${tab==="playground"?"active":""}`} onClick={()=>{setPlaygroundOpened(true);setTab("playground");}}><Shapes size={19}/>{playgroundLabels[locale].name}<span className="nav-active-dot"/></button>
-          <button aria-current={tab==="favorites"?"page":undefined} title={t.favorites} className={`nav-favorites ${tab==="favorites"?"active":""}`} onClick={()=>setTab("favorites")}><Heart size={19}/>{t.favorites}<span className="nav-count">{prefs.favorites.length}</span></button>
-          <button aria-current={tab==="history"?"page":undefined} title={t.history} className={`nav-history ${tab==="history"?"active":""}`} onClick={()=>setTab("history")}><History size={19}/>{t.history}<span className="nav-count">{prefs.history.length}</span></button>
         </nav>
         </div>
         <div className="preferences"><label className="language-picker"><span>{t.locale}</span><select aria-label={t.locale} value={locale} onChange={e=>setPrefs(p=>({...p,locale:e.target.value as Locale}))}><option value="en">English</option><option value="es">Español</option></select></label><button className="motion-toggle" aria-pressed={reduced} onClick={()=>setPrefs(p=>({...p,reduced:!p.reduced}))}><Moon size={14}/>{t.reduced}<span className={`toggle ${reduced?"on":""}`}/></button><p><span className="privacy-dot"/>{t.local}</p></div>
