@@ -1,8 +1,9 @@
 import { emojiById } from "./catalog";
 import type { Discovery, TopicCandidate } from "./types";
+import { isTheme, type Theme } from "./themes";
 export const storageKey = "dream-maker-v1";
-export type Preferences = { locale: "en" | "es"; view: "constellation" | "grid" | "list"; reduced: boolean; favorites: Discovery[]; history: Discovery[] };
-export const initialPreferences: Preferences = { locale: "en", view: "constellation", reduced: false, favorites: [], history: [] };
+export type Preferences = { locale: "en" | "es"; theme: Theme; view: "constellation" | "grid" | "list"; reduced: boolean; favorites: Discovery[]; history: Discovery[] };
+export const initialPreferences: Preferences = { locale: "en", theme: "classic", view: "constellation", reduced: false, favorites: [], history: [] };
 export function validTopic(value: unknown): value is TopicCandidate {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const t = value as TopicCandidate;
@@ -15,7 +16,7 @@ function discoveries(value: unknown, limit: number): Discovery[] {
 export function readPreferences(storage: Pick<Storage,"getItem">): Preferences {
   try {
     const p = JSON.parse(storage.getItem(storageKey) || "{}");
-    return { locale: p.locale === "es" ? "es" : "en", view: ["grid","list"].includes(p.view) ? p.view : "constellation", reduced: p.reduced === true, favorites: discoveries(p.favorites,200), history: discoveries(p.history,50) };
+    return { locale: p.locale === "es" ? "es" : "en", theme: isTheme(p.theme) ? p.theme : "classic", view: ["grid","list"].includes(p.view) ? p.view : "constellation", reduced: p.reduced === true, favorites: discoveries(p.favorites,200), history: discoveries(p.history,50) };
   } catch { return {...initialPreferences}; }
 }
 export function savePreferences(storage: Pick<Storage,"setItem">, p: Preferences) { try { storage.setItem(storageKey,JSON.stringify(p)); return true; } catch { return false; } }

@@ -13,6 +13,7 @@ import { dragAccessibility } from "@/lib/drag-accessibility";
 import { playgroundLabels } from "@/features/playground/labels";
 import { discoveryKey, initialPreferences, readPreferences, remember, savePreferences } from "@/lib/storage";
 import type { Preferences } from "@/lib/storage";
+import { isTheme, themes, themeLabels } from "@/lib/themes";
 import type { Discovery, EmojiRecord, Locale, TopicCandidate } from "@/lib/types";
 import { loadVideos } from "@/lib/video-prefetch";
 import { emojisForSubject, subjects } from "@/lib/subjects";
@@ -26,7 +27,7 @@ function EmojiButton({emoji,locale,selected,onSelect,position,view}:{emoji:Emoji
   const button=<button ref={setNodeRef} {...attributes} {...listeners} onKeyDown={event=>{if(event.key==="Enter"){event.preventDefault();onSelect();}else listeners?.onKeyDown?.(event);}} onClick={onSelect} title={emoji.labels[locale]} aria-label={emoji.labels[locale]} aria-pressed={selected} className={`emoji-button ${selected?"selected":""} ${isDragging?"dragging":""}`}>
     <span className="emoji-glyph">{emoji.glyph}</span><span className="emoji-label">{emoji.labels[locale]}</span>
   </button>;
-  return view==="constellation"?<div className="emoji-orbit" style={{"--angle":`${position.angle}deg`,"--radius":`${position.radius}%`,"--period":`${position.duration}s`} as React.CSSProperties}>{button}</div>:button;
+  return view==="constellation"?<div className="emoji-orbit" style={{"--angle":`${position.angle}deg`,"--radius":`${position.radius}%`,"--period":`${position.duration}s`} as React.CSSProperties}><div className="emoji-orbit-position">{button}</div></div>:button;
 }
 function Portal({locale,selected,onOpen,reduced,paused}:{locale:Locale;selected:boolean;onOpen:()=>void;reduced:boolean;paused:boolean}) {
   const {setNodeRef,isOver}=useDroppable({id:"portal"});
@@ -67,6 +68,7 @@ export default function Explorer() {
   const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:6}}),useSensor(KeyboardSensor));
   useEffect(()=>{try{setPrefs(readPreferences(window.localStorage));}catch{setStorageFailed(true);}setReady(true);},[]);
   useEffect(()=>{if(ready){try{setStorageFailed(!savePreferences(window.localStorage,prefs));}catch{setStorageFailed(true);}}document.documentElement.lang=prefs.locale;},[prefs,ready]);
+  useEffect(()=>{if(ready)document.documentElement.dataset.theme=prefs.theme;},[prefs.theme,ready]);
   useEffect(()=>{const media=window.matchMedia("(prefers-reduced-motion: reduce)");const update=()=>setSystemReduced(media.matches);update();media.addEventListener("change",update);return()=>media.removeEventListener("change",update);},[]);
   useEffect(()=>{let current=48;const update=()=>{const next=window.innerWidth<=360?18:window.innerWidth<=720?24:48;if(next!==current){current=next;setPageSize(next);setPage(0);}};update();window.addEventListener("resize",update);return()=>window.removeEventListener("resize",update);},[]);
   useEffect(()=>{if(query===debounced)return;const timer=setTimeout(()=>{setDebounced(query);setPage(0);},150);return()=>clearTimeout(timer);},[query,debounced]);
@@ -131,7 +133,7 @@ export default function Explorer() {
           <button aria-current={tab==="playground"?"page":undefined} title={playgroundLabels[locale].name} className={`nav-playground ${tab==="playground"?"active":""}`} onClick={()=>{setPlaygroundOpened(true);setTab("playground");}}><Shapes size={19}/>{playgroundLabels[locale].name}<span className="nav-active-dot"/></button>
         </nav>
         </div>
-        <div className="preferences"><label className="language-picker"><span>{t.locale}</span><select aria-label={t.locale} disabled={!ready} value={locale} onChange={e=>setPrefs(p=>({...p,locale:e.target.value as Locale}))}><option value="en" lang="en">English</option><option value="es" lang="es">Español</option></select></label><button className="motion-toggle" disabled={systemReduced} title={systemReduced?t.systemReduced:undefined} aria-describedby={systemReduced?"system-motion-note":undefined} aria-pressed={reduced} onClick={()=>setPrefs(p=>({...p,reduced:!p.reduced}))}><Moon size={14}/>{t.reduced}<span className={`toggle ${reduced?"on":""}`}/></button><p><span className="privacy-dot"/>{t.local}</p>{systemReduced&&<span id="system-motion-note" className="visually-hidden">{t.systemReduced}</span>}</div>
+        <div className="preferences"><label className="language-picker"><span>{t.locale}</span><select aria-label={t.locale} disabled={!ready} value={locale} onChange={e=>setPrefs(p=>({...p,locale:e.target.value as Locale}))}><option value="en" lang="en">English</option><option value="es" lang="es">Español</option></select></label><label className="theme-picker"><span>{themeLabels[locale].label}</span><select aria-label={themeLabels[locale].label} disabled={!ready} value={prefs.theme} onChange={e=>{const theme=e.target.value;if(isTheme(theme))setPrefs(p=>({...p,theme}));}}>{themes.map(theme=><option key={theme} value={theme}>{themeLabels[locale][theme]}</option>)}</select></label><button className="motion-toggle" disabled={systemReduced} title={systemReduced?t.systemReduced:undefined} aria-describedby={systemReduced?"system-motion-note":undefined} aria-pressed={reduced} onClick={()=>setPrefs(p=>({...p,reduced:!p.reduced}))}><Moon size={14}/>{t.reduced}<span className={`toggle ${reduced?"on":""}`}/></button><p><span className="privacy-dot"/>{t.local}</p>{systemReduced&&<span id="system-motion-note" className="visually-hidden">{t.systemReduced}</span>}</div>
       </aside>
       <main id="main-content" tabIndex={-1} aria-labelledby="main-heading" className={`main-content section-${tab}`}>
         <section className="intro"><h1 id="main-heading" aria-live="polite" aria-atomic="true">{tab==="discover"?t.title:tab==="playground"?playgroundLabels[locale].title:tab==="favorites"?t.saved:t.recent}</h1><p>{tab==="discover"?t.intro:tab==="playground"?playgroundLabels[locale].intro:tab==="favorites"?t.savedIntro:t.historyIntro}</p></section>

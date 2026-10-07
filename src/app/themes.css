@@ -1,0 +1,129 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&display=swap');
+@import './theme-surfaces.css';
+
+/* Classic's existing tokens and rules stay untouched. Theme tokens are separate
+   so the protected result page, story shelf and reading view cannot inherit them. */
+:root[data-theme="cyberpunk"]:not([data-theme="classic"]) {
+  color-scheme: dark;
+  --theme-bg:#080e19; --theme-side:#0c1321; --theme-panel:#101c2d;
+  --theme-raised:#152437; --theme-input:#0b1626; --theme-text:#edf9fc;
+  --theme-muted:#a9bfce; --theme-line:#36566c; --theme-accent:#55f0e6;
+  --theme-on-accent:#041514; --theme-secondary:#ff65c8; --theme-secondary-text:#ff8ed7;
+  --theme-good:#edff89; --theme-selected:#18333c; --theme-selected-text:#83fff6;
+  --theme-heading:'Space Grotesk','Manrope',sans-serif;
+  --theme-radius:3px; --theme-control-radius:3px; --theme-shadow:#000000;
+  --theme-board:#101a29; --theme-board-toolbar:#14273b; --theme-board-text:#c6eeef;
+  --theme-field:#0b1524; --theme-field-glow:#23a9b3;
+}
+:root[data-theme="solarpunk"]:not([data-theme="classic"]) {
+  color-scheme: light;
+  --theme-bg:#f5f4e8; --theme-side:#ebefde; --theme-panel:#fffdf2;
+  --theme-raised:#e6ebd9; --theme-input:#fffdf5; --theme-text:#233e32;
+  --theme-muted:#526456; --theme-line:#afbea5; --theme-accent:#246249;
+  --theme-on-accent:#fffdf2; --theme-secondary:#e9bb56; --theme-secondary-text:#785218;
+  --theme-good:#376633; --theme-selected:#dce8ce; --theme-selected-text:#245b40;
+  --theme-heading:'Fraunces',Georgia,serif;
+  --theme-radius:22px; --theme-control-radius:12px; --theme-shadow:#304c26;
+  --theme-board:#fffef7; --theme-board-toolbar:#e8efdd; --theme-board-text:#315640;
+  --theme-field:#eef0dc; --theme-field-glow:#e1bb65;
+  --orbit-rotation:-20deg; --orbit-scale-x:1.04; --orbit-scale-y:.84;
+}
+:root[data-theme="retro"]:not([data-theme="classic"]) {
+  color-scheme: light;
+  --theme-bg:#f1e3c8; --theme-side:#e8d5b2; --theme-panel:#fff2d7;
+  --theme-raised:#efdcbb; --theme-input:#fff2d7; --theme-text:#433222;
+  --theme-muted:#70553d; --theme-line:#917254; --theme-accent:#a13c26;
+  --theme-on-accent:#fff5df; --theme-secondary:#e4aa42; --theme-secondary-text:#795014;
+  --theme-good:#4b6434; --theme-selected:#f4c58c; --theme-selected-text:#63341e;
+  --theme-heading:'Fraunces',Georgia,serif;
+  --theme-radius:16px; --theme-control-radius:8px; --theme-shadow:#836144;
+  --theme-board:#fff6e4; --theme-board-toolbar:#ecd7b0; --theme-board-text:#68472c;
+  --theme-field:#f9ebce; --theme-field-glow:#e3a941;
+}
+
+/* Native, labeled controls retain the language picker's Classic appearance. */
+.theme-picker { display:block; margin-top:12px; color:#aaa4b7; font-size:11px; }
+.theme-picker>span { display:block; margin-bottom:6px; }
+.theme-picker select { width:100%; padding:8px 9px; color:#aaa4b7; background:#14131e; border:1px solid #2a2635; border-radius:7px; font-size:12px; }
+.theme-picker select:focus-visible { outline:2px solid #c5a0ff; outline-offset:3px; }
+
+/* A shared orbit plane keeps path and glyph coordinates identical. Counter-
+   rotation happens on the position wrapper, then the button cancels the plane's
+   ellipse transform. Hit targets, tooltips and emoji artwork remain upright. */
+.constellation .emoji-orbit-position {
+  position:absolute; left:calc(50% + var(--radius)); top:50%;
+  width:46px; height:46px; pointer-events:none;
+  transform:translate(-50%,-50%) rotate(calc(-1 * var(--angle)));
+  animation:emoji-counter-revolution var(--period) linear infinite;
+}
+.constellation .emoji-orbit-position .emoji-button {
+  left:0; top:0; width:100%; height:100%; animation:none;
+  transform:scale(calc(1 / var(--orbit-scale-x,1)),calc(1 / var(--orbit-scale-y,1))) rotate(calc(-1 * var(--orbit-rotation,0deg)));
+}
+.is-dragging .emoji-orbit-position, .paused .emoji-orbit-position,
+.constellation:has(.emoji-button:hover) .emoji-orbit-position,
+.constellation:has(.emoji-button:focus-visible) .emoji-orbit-position { animation-play-state:paused; }
+.reduced .emoji-orbit-position { animation:none; }
+@media(prefers-reduced-motion:reduce) { .emoji-orbit-position { animation:none!important; } }
+@media(max-width:1150px) and (min-width:721px) { .constellation .emoji-orbit-position { width:38px; height:38px; } }
+@media(max-width:720px) { .constellation .emoji-orbit-position { width:32px; height:32px; } }
+:root[data-theme="solarpunk"]:not([data-theme="classic"]) .constellation .emoji-field {
+  transform:rotate(var(--orbit-rotation)) scale(var(--orbit-scale-x),var(--orbit-scale-y));
+}
+:root[data-theme="solarpunk"]:not([data-theme="classic"]) .constellation .orbit-guide {
+  transform:translate(-50%,-50%) rotate(var(--orbit-rotation)) scale(var(--orbit-scale-x),var(--orbit-scale-y));
+}
+
+/* BlackHole.tsx retains every path, filament, lens and animation. Only the
+   emitted colors and glow change; preserve its existing energy brightness. */
+:root[data-theme="cyberpunk"]:not([data-theme="classic"]) .portal .black-hole { filter:brightness(calc(1 + var(--accretion-energy) * .3)) hue-rotate(143deg) saturate(.9) drop-shadow(0 0 5px #55f0e630); }
+:root[data-theme="solarpunk"]:not([data-theme="classic"]) .portal .black-hole { filter:brightness(calc(1 + var(--accretion-energy) * .3)) hue-rotate(7deg) saturate(.8) drop-shadow(0 0 5px #d8a34a25); }
+:root[data-theme="retro"]:not([data-theme="classic"]) .portal .black-hole { filter:brightness(calc(1 + var(--accretion-energy) * .3)) hue-rotate(-8deg) saturate(.8); }
+
+:root[data-theme]:not([data-theme="classic"]) body { background:var(--theme-bg); color:var(--theme-text); }
+:root[data-theme]:not([data-theme="classic"]) .theme-picker { color:var(--theme-muted); }
+:root[data-theme]:not([data-theme="classic"]) .theme-picker select { background:var(--theme-input); color:var(--theme-text); border-color:var(--theme-line); border-radius:var(--theme-control-radius); }
+:root[data-theme]:not([data-theme="classic"]) :is(.theme-picker select,.language-picker select):focus-visible { outline:2px solid var(--theme-accent); outline-offset:3px; }
+:root[data-theme]:not([data-theme="classic"]) .sidebar { background:var(--theme-side); }
+:root[data-theme]:not([data-theme="classic"]) .intro h1 { font-family:var(--theme-heading); }
+:root[data-theme]:not([data-theme="classic"]) .dream-canvas { background:radial-gradient(ellipse at 50% 50%,color-mix(in srgb,var(--theme-field-glow) 22%,transparent),transparent 72%),var(--theme-field); }
+:root[data-theme]:not([data-theme="classic"]) .constellation .orbit-guide:is(.guide-one,.guide-middle,.guide-two) { border-color:color-mix(in srgb,var(--theme-accent) 18%,transparent); }
+:root[data-theme]:not([data-theme="classic"]) .dream-canvas::before { background-image:linear-gradient(color-mix(in srgb,var(--theme-accent) 4%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--theme-accent) 4%,transparent) 1px,transparent 1px); }
+:root[data-theme]:not([data-theme="classic"]) .selection-card { background:linear-gradient(145deg,var(--theme-raised),var(--theme-panel)); }
+:root[data-theme]:not([data-theme="classic"]) :is(.open-button,.pg-generate):not(:disabled) { background:var(--theme-accent); color:var(--theme-on-accent); border-color:var(--theme-accent); }
+:root[data-theme]:not([data-theme="classic"]) :is(.open-button,.pg-generate):not(:disabled):hover { background:color-mix(in srgb,var(--theme-accent) 90%,var(--theme-text)); color:var(--theme-on-accent); }
+
+/* Keep the original visual context around the protected results, including the
+   controls below the paper and the story shelf when the rest of the app is light. */
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-output,.pg-results) { background:var(--bg); color:var(--text); color-scheme:dark; }
+:root[data-theme]:not([data-theme="classic"]) .pg-reader { color-scheme:dark; }
+
+:root[data-theme="cyberpunk"]:not([data-theme="classic"]) :is(.canvas-toolbar,.pagination,.eyebrow) { font-family:'IBM Plex Mono',monospace; }
+:root[data-theme="cyberpunk"]:not([data-theme="classic"]) .dream-canvas { border-width:2px; border-top-color:var(--theme-accent); }
+:root[data-theme="cyberpunk"]:not([data-theme="classic"]) .selection-card { border-top:2px solid var(--theme-secondary); }
+:root[data-theme="cyberpunk"]:not([data-theme="classic"]) .sidebar nav button.active { border-left:2px solid var(--theme-accent); border-radius:0; }
+:root[data-theme="solarpunk"]:not([data-theme="classic"]) .intro { background:radial-gradient(ellipse at 90% 0%,#e9bb5620,transparent 65%); }
+:root[data-theme="solarpunk"]:not([data-theme="classic"]) .intro h1 { font-weight:500; letter-spacing:-1px; }
+:root[data-theme="solarpunk"]:not([data-theme="classic"]) .dream-canvas { border-radius:80px 22px 80px 22px; }
+:root[data-theme="solarpunk"]:not([data-theme="classic"]) .selection-card { border-radius:65px 65px 22px 22px; }
+:root[data-theme="solarpunk"]:not([data-theme="classic"]) :is(.open-button,.pg-generate) { border-radius:30px; }
+:root[data-theme="retro"]:not([data-theme="classic"]) .main-content { border-top:7px solid var(--theme-accent); }
+:root[data-theme="retro"]:not([data-theme="classic"]) .intro h1 { font-weight:700; letter-spacing:-1.6px; }
+:root[data-theme="retro"]:not([data-theme="classic"]) .dream-canvas::before { background-image:radial-gradient(#7053311c .7px,transparent .8px); background-size:5px 5px; }
+:root[data-theme="retro"]:not([data-theme="classic"]) :is(.dream-canvas,.selection-card,.saved-card,.pg-panel) { border-width:2px; box-shadow:3px 4px 0 #83614438; }
+:root[data-theme="retro"]:not([data-theme="classic"]) :is(.open-button,.pg-generate):not(:disabled) { box-shadow:3px 3px 0 #63341e; }
+
+@media(min-width:721px) and (max-width:920px) {
+  /* The compact sidebar still needs room for the longer theme names. */
+  .sidebar { width:142px; }
+  .main-content { margin-left:142px; }
+  .preferences { width:118px; margin-left:0; }
+  .theme-picker { font-size:11px; }
+  .theme-picker select,.language-picker select { width:118px; font-size:12px; padding:8px 9px; }
+}
+@media(max-width:720px) {
+  .preferences { display:flex; flex-direction:column; gap:8px; align-items:stretch; flex:0 0 130px; }
+  .theme-picker { margin-top:0; }
+  .language-picker select { width:100%; }
+}
+@media(pointer:coarse) { .theme-picker select { min-height:44px; font-size:16px; } }
