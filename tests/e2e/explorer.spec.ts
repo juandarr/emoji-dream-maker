@@ -201,9 +201,10 @@ test("emojis orbit upright, double on hover, pause for picking, and resume",asyn
   const still=await emoji.boundingBox();
   expect(Math.hypot(still!.x-paused!.x,still!.y-paused!.y)).toBeLessThan(.5);
   expect(await emoji.evaluate(el=>{
-    const parent=new DOMMatrixReadOnly(getComputedStyle(el.parentElement!).transform);
+    const orbit=new DOMMatrixReadOnly(getComputedStyle(el.closest(".emoji-orbit")!).transform);
+    const position=new DOMMatrixReadOnly(getComputedStyle(el.parentElement!).transform);
     const own=new DOMMatrixReadOnly(getComputedStyle(el).transform);
-    return Math.abs(parent.multiply(own).b);
+    return Math.abs(orbit.multiply(position).multiply(own).b);
   })).toBeLessThan(.01);
   await page.mouse.move(0,0);
   await page.waitForTimeout(700);

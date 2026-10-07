@@ -4,6 +4,17 @@ import { initialPreferences, readPreferences, remember, savePreferences, validTo
 const emoji=searchCatalog("octopus")[0];
 const discovery={emojiId:emoji.id,topic:defaultTopic(emoji,"en"),at:1};
 describe("local discoveries",()=>{
+  it("defaults older preferences to Classic without losing saved discoveries",()=>{
+    const preferences=readPreferences({getItem:()=>JSON.stringify({locale:"es",view:"grid",reduced:true,favorites:[discovery],history:[discovery]})});
+    expect(preferences).toEqual({...initialPreferences,locale:"es",view:"grid",reduced:true,favorites:[discovery],history:[discovery]});
+  });
+  it("persists known themes and rejects malformed or unknown theme values",()=>{
+    for(const theme of ["classic","cyberpunk","solarpunk","retro"] as const){
+      let value="";savePreferences({setItem:(_key,json)=>{value=json;}},{...initialPreferences,theme});
+      expect(readPreferences({getItem:()=>value}).theme).toBe(theme);
+    }
+    for(const theme of ["unknown",null,{},["retro"],1])expect(readPreferences({getItem:()=>JSON.stringify({theme})}).theme).toBe("classic");
+  });
   it("rejects saved topics with objects where React expects description text",()=>{
     expect(validTopic({...discovery.topic,description:{broken:true}})).toBe(false);
     expect(validTopic({...discovery.topic,suggested:"false"})).toBe(false);
