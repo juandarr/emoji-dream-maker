@@ -1,3 +1,4 @@
+import { savedBoard, importSavedBoard } from "./helpers/playground-workspace";
 import { expect, test, type Page } from "@playwright/test";
 import {readFileSync} from "node:fs";
 import {createRequire} from "node:module";
@@ -19,7 +20,7 @@ async function picker(page:Page) {if(!await page.getByRole("textbox",{name:"Sear
 async function add(page:Page,query:string,label:string) {await picker(page);await page.getByRole("textbox",{name:"Search emojis in English or Spanish"}).fill(query);await page.getByRole("button",{name:`Add ${label}`,exact:true}).click();await page.getByRole("button",{name:"Close emoji picker",exact:true}).click();await page.locator(".pg-node").last().focus();await page.keyboard.press("Enter");}
 test("board authoring, independent meanings, relationships, undo and reload",async({page})=>{
   await open(page);await expect(page.locator(".pg-board")).toHaveCSS("background-color","rgb(255, 255, 255)");
-  await page.getByRole("button",{name:"Add relationships",exact:true}).click();await add(page,"red heart","red heart");await page.getByRole("button",{name:"Duplicate",exact:true}).click();
+  await page.getByRole("button",{name:"Context",exact:true}).click();await page.getByRole("button",{name:"Add relationships",exact:true}).click();await add(page,"red heart","red heart");await page.getByRole("button",{name:"Duplicate",exact:true}).click();
   await page.getByLabel("Chosen meaning",{exact:true}).fill("Human heart");await page.getByLabel("Chosen meaning",{exact:true}).press("Tab");
   const nodes=page.locator(".pg-node");await expect(nodes).toHaveCount(2);await expect(nodes.nth(0)).toHaveAttribute("aria-label",/Love/);await expect(nodes.nth(1)).toHaveAttribute("aria-label",/Human heart/);
   await expect(nodes.nth(1)).toHaveAttribute("data-glyph","❤️");await expect(nodes.nth(1).locator(".pg-vector-glyph")).toHaveText("❤️");await expect(nodes.nth(1)).toHaveCSS("background-color","rgba(0, 0, 0, 0)");await expect(nodes.nth(1)).toHaveCSS("border-top-width","0px");
@@ -28,7 +29,7 @@ test("board authoring, independent meanings, relationships, undo and reload",asy
   await nodes.nth(1).focus();await nodes.nth(1).press("ArrowRight");const moved=await nodes.nth(1).getAttribute("style");
   await page.getByRole("button",{name:"Undo",exact:true}).click();expect(await nodes.nth(1).getAttribute("style")).not.toEqual(moved);
   await page.getByRole("button",{name:"Redo",exact:true}).click();expect(await nodes.nth(1).getAttribute("style")).toEqual(moved);
-  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(nodes).toHaveCount(2);await expect(nodes.nth(1)).toHaveAttribute("aria-label",/Human heart/);await expect(page.locator(".pg-relationships")).toContainText("contrasts with");
+  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();const snapshot=await savedBoard(page);await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(nodes).toHaveCount(0);await importSavedBoard(page,snapshot);await page.getByRole("button",{name:"Context",exact:true}).click();await page.getByRole("button",{name:"Add relationships",exact:true}).click();await expect(nodes).toHaveCount(2);await expect(nodes.nth(1)).toHaveAttribute("aria-label",/Human heart/);await expect(page.locator(".pg-relationships")).toContainText("contrasts with");
 });
 test("drag addition and moving are one undo step at scrolled page positions",async({page})=>{
   await open(page);await picker(page);await page.getByLabel("Search emojis in English or Spanish").fill("octopus");
@@ -43,7 +44,7 @@ test("drag addition and moving are one undo step at scrolled page positions",asy
 });
 test("generation uses editable input, keeps results through tab changes and marks stale meanings",async({page})=>{
   await open(page);await add(page,"moon","crescent moon");
-  await page.getByRole("button",{name:"Add relationships",exact:true}).click();
+  await page.getByRole("button",{name:"Context",exact:true}).click();await page.getByRole("button",{name:"Add relationships",exact:true}).click();
   await page.locator(".pg-brief-options summary").click();
   await page.getByLabel("Editable interpretation",{exact:true}).fill("A moonlit ocean with a calm mood.");
   await page.getByRole("button",{name:"Settings",exact:true}).click();
@@ -56,13 +57,13 @@ test("generation uses editable input, keeps results through tab changes and mark
   await page.screenshot({path:"/tmp/playground-desktop.png",fullPage:true});
   await page.getByRole("button",{name:"Favorites",exact:false}).click();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-output .pg-story-prose")).toBeVisible();
   await page.getByLabel("Chosen meaning",{exact:true}).fill("Nighttime");await page.getByLabel("Chosen meaning",{exact:true}).press("Tab");await expect(page.getByText("This creation uses an earlier version of your ideas.")).toBeVisible();
-  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-output .pg-story-prose")).toHaveText("Moonlight over a quiet ocean.");
+  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-output .pg-story-prose")).toHaveCount(0);await page.locator(".pg-history-read").click();await expect(page.locator(".pg-reader .pg-story-prose")).toHaveText("Moonlight over a quiet ocean.");
 });
 test("connection and provider failures preserve the authored board",async({page})=>{
   await open(page);await add(page,"ocean","water wave");
   await page.route("**/api/generations",route=>route.request().method()==="GET"?route.fulfill({json:{configured:false,models:["test/text"],maxOutputTokens:800}}):route.fulfill({status:502,json:{error:"OpenRouter needs credits or a higher key budget.",code:"credits"}}));
   await page.getByRole("button",{name:"Generate",exact:true}).click();await expect(page.locator(".pg-generation-status")).toContainText("OpenRouter needs credits or a higher key budget.");await expect(page.locator(".pg-node")).toHaveCount(1);
-  await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.getByRole("button",{name:"Generate",exact:true})).toBeDisabled();await expect(page.locator(".pg-header-issue").filter({hasText:/To connect OpenRouter/})).toBeVisible();await expect(page.locator(".pg-node")).toHaveCount(1);
+  await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.getByRole("button",{name:"Generate",exact:true})).toBeDisabled();await page.getByRole("button",{name:"Settings information",exact:true}).click();await expect(page.locator("#pg-settings-information")).toContainText("To connect OpenRouter");await expect(page.locator(".pg-node")).toHaveCount(0);
 });
 test("phone tap flow and Spanish meanings have no horizontal overflow",async({page})=>{
   await page.setViewportSize({width:390,height:844});await open(page);await page.getByLabel("Interface language").selectOption("es");
@@ -201,7 +202,7 @@ test("floating picker drag uses zoomed and panned world coordinates and saves of
   await page.mouse.move(rect!.x+400,rect!.y+200);await page.mouse.down();await page.mouse.move(rect!.x+1100,rect!.y+200,{steps:8});await page.mouse.up();
   await picker(page);await page.getByRole("button",{name:"Add octopus",exact:true}).click();await expect(node).toHaveCount(2);
   const position=await node.last().evaluate(el=>({left:(el as HTMLElement).style.left,top:(el as HTMLElement).style.top}));expect(parseFloat(position.left)).toBeLessThan(0);
-  await page.getByRole("button",{name:"Exit fullscreen"}).click();await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(node).toHaveCount(2);expect(await node.last().evaluate(el=>({left:(el as HTMLElement).style.left,top:(el as HTMLElement).style.top}))).toEqual(position);
+  await page.getByRole("button",{name:"Exit fullscreen"}).click();await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();const snapshot=await savedBoard(page);await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(node).toHaveCount(0);await importSavedBoard(page,snapshot);await expect(node).toHaveCount(2);expect(await node.last().evaluate(el=>({left:(el as HTMLElement).style.left,top:(el as HTMLElement).style.top}))).toEqual(position);
   await page.locator(".pg-stage").scrollIntoViewIfNeeded();await page.getByRole("button",{name:"Fit objects in view"}).click();await expect(node.first()).toBeInViewport();await expect(node.last()).toBeInViewport();
 });
 
@@ -296,7 +297,7 @@ test("Noto vectors shape the whole catalog including flags, ZWJ and skin tones",
 test("story shelf opens a focus-contained reader and preserves edits through reload",async({page})=>{
   await open(page);await add(page,"moon","crescent moon");
   await expect(page.getByLabel("Tone",{exact:true})).toHaveCount(0);
-  await page.getByRole("button",{name:"Add context",exact:true}).click();
+  await page.getByRole("button",{name:"Context",exact:true}).click();
   await page.getByLabel("Scene title",{exact:true}).fill("The moon's secret");
   await page.getByRole("button",{name:"Generate",exact:true}).click();
   const card=page.getByRole("button",{name:"Read creation: The moon's secret",exact:true});

@@ -27,9 +27,14 @@ export function fitCamera(points:Point[],width:number,height:number):Camera {
   const zoom=Math.min(width*.95/Math.max(1,maxX-minX),height*.95/Math.max(1,maxY-minY));
   return {zoom,x:width/2-(minX+maxX)/2*zoom,y:height/2-(minY+maxY)/2*zoom};
 }
+/** Fit the same reference rectangle at either size, avoiding cumulative shrinkage
+ * when a viewport changes aspect ratio and returns to its original dimensions. */
+export function resizeScale(previous:{width:number;height:number},next:{width:number;height:number},reference=previous):number {
+  return Math.min(next.width/reference.width,next.height/reference.height)/Math.min(previous.width/reference.width,previous.height/reference.height);
+}
 /** Preserve the center world point and scale uniformly with the available viewport. */
-export function resizeCamera(camera:Camera,previous:{width:number;height:number},next:{width:number;height:number}):Camera {
+export function resizeCamera(camera:Camera,previous:{width:number;height:number},next:{width:number;height:number},reference=previous):Camera {
   const center=worldPoint({x:previous.width/2,y:previous.height/2},camera);
-  const zoom=camera.zoom*Math.min(next.width/previous.width,next.height/previous.height);
+  const zoom=camera.zoom*resizeScale(previous,next,reference);
   return {zoom,x:next.width/2-center.x*zoom,y:next.height/2-center.y*zoom};
 }

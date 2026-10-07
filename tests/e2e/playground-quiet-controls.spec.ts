@@ -24,7 +24,7 @@ test("readable options and a live generation summary support hover, focus and di
   await expect(summary).toBeHidden();await info.hover();await expect(summary).not.toContainText("Before you generate");await expect(summary).toContainText("test/text");await expect(summary).toContainText("Model default");await expect(summary).toContainText("Automatic canvas interpretation");
   await page.getByLabel("Make a",{exact:true}).hover();await expect(summary).toBeHidden();
   await info.focus();await expect(summary).toBeVisible();await info.press("Escape");await expect(summary).toBeHidden();
-  await page.getByRole("button",{name:"Add relationships",exact:true}).click();await page.getByLabel("Scene title",{exact:true}).fill("The moon’s invitation");await page.getByLabel("What do you want to express?",{exact:true}).fill("Finding courage.");
+  await page.getByRole("button",{name:"Context",exact:true}).click();await page.getByRole("button",{name:"Add relationships",exact:true}).click();await page.getByLabel("Scene title",{exact:true}).fill("The moon’s invitation");await page.getByLabel("What do you want to express?",{exact:true}).fill("Finding courage.");
   await page.locator(".pg-brief-options summary").click();await page.getByLabel("Editable interpretation",{exact:true}).fill("A journey toward the unknown.");
   await page.locator(".pg-node").first().click();await page.getByLabel("Connect to",{exact:true}).selectOption("moon");await page.getByLabel("Relationship label",{exact:true}).fill("dreams of");await page.getByRole("button",{name:"Connect",exact:true}).click();
   await page.getByRole("button",{name:"Settings",exact:true}).click();await page.getByLabel("Text model",{exact:true}).selectOption("test/other");await page.getByLabel("Reasoning effort",{exact:true}).selectOption("high");
@@ -73,13 +73,13 @@ test("deleting a pending creation does not resurrect it, and Undo restores the f
 });
 
 
-test("existing saved workspaces without an active result field retain their latest output",async({page})=>{
+test("legacy saved workspaces keep their story shelf while the active session starts fresh",async({page})=>{
   await open(page);await generate(page,1);
   await page.evaluate(()=>new Promise<void>((resolve,reject)=>{
     const request=indexedDB.open("dream-maker-playground-v1",1);
     request.onsuccess=()=>{const db=request.result,tx=db.transaction("workspace","readwrite"),store=tx.objectStore("workspace"),read=store.get("active");read.onsuccess=()=>{const saved=read.result;delete saved.activeRunId;store.put(saved,"active");};tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>reject(tx.error);};request.onerror=()=>reject(request.error);
   }));
-  await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-output .pg-story-title")).toHaveText("Creation 1");await expect(page.locator(".pg-history-card")).toHaveCount(1);
+  await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-output .pg-story-prose")).toHaveCount(0);await expect(page.locator(".pg-history-card")).toHaveCount(1);await expect(page.locator(".pg-history-title")).toHaveText("Creation 1");
 });
 
 test("generation uses the arranged scene; camera changes stay fresh and object transforms make results stale",async({page})=>{
@@ -92,5 +92,5 @@ test("generation uses the arranged scene; camera changes stay fresh and object t
   await page.getByRole("button",{name:"Rotate selection",exact:true}).press("ArrowRight");await page.getByRole("button",{name:"Resize selection",exact:true}).press("ArrowRight");
   const request=page.waitForRequest(r=>r.url().endsWith("/api/generations")&&r.method()==="POST");await generate(page,2);
   const submitted=(await request).postDataJSON().board.nodes.find((node:{id:string})=>node.id==="bear");expect(submitted.x).toBeCloseTo(47);expect(submitted.y).toBeCloseTo(45);expect(submitted.rotation).toBe(5);expect(submitted.scale).toBeCloseTo(1.1);await expect(stale).toHaveCount(0);
-  await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-output .pg-story-title")).toHaveText("Creation 2");await expect(stale).toHaveCount(0);
+  await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-output .pg-story-prose")).toHaveCount(0);await expect(page.locator(".pg-history-title").first()).toHaveText("Creation 2");await expect(stale).toHaveCount(0);
 });

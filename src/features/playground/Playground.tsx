@@ -65,7 +65,8 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
     void save.then(()=>{if(version===saveVersion.current)setSaveStatus("saved");},()=>{if(version===saveVersion.current)setSaveStatus("failed");});
     return save;
   },[]);
-  useEffect(()=>{let alive=true;void loadWorkspace().then(saved=>{if(alive&&saved){dispatch({type:"load",board:saved.board});setRuns(saved.runs);setActiveRunId(saved.activeRunId??null);}},()=>{if(alive)setReadFailed(true);}).finally(()=>{if(alive)setReady(true);});return()=>{alive=false;};},[]);
+  useEffect(()=>{let alive=true;void loadWorkspace().then(saved=>{if(alive&&saved){// A refresh begins a new composition; saved creations remain in the shelf.
+      setRuns(saved.runs);}},()=>{if(alive)setReadFailed(true);}).finally(()=>{if(alive)setReady(true);});return()=>{alive=false;};},[]);
   useEffect(()=>{if(ready&&!readFailed)void persist({board,runs,activeRunId}).catch(()=>{});},[ready,readFailed,board,runs,activeRunId,persist]);
   const checkConnection=useCallback(async()=>{
     setConfig(null);setConfigFailed(false);

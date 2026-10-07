@@ -67,3 +67,29 @@
 .pg-generation-summary ul { margin:0;padding-left:17px; }
 .pg-generation-summary li+li { margin-top:4px; }
 @media(max-width:540px) { .pg-header-action-area .pg-create-column { min-height:110px; } .pg-generation-summary { right:auto;left:50%;transform:translateX(-50%); } .pg-summary-trigger { width:40px;height:40px; } }
+
+/* Context owns its fields and relationship editor in a single enclosing panel. */
+.pg-creation-header .pg-context-panel { margin-top:20px; }
+.pg-context-heading { margin-bottom:10px; }
+.pg-context-relationship-toggle { margin-left:-9px; }
+.pg-context-panel .pg-context-panels { margin-top:16px; }
+.pg-context-panel .pg-header-inspector { min-height:0;border-inline-start:1px solid var(--theme-line,#38323f);padding-inline-start:16px; }
+:root[data-theme] .pg-creation-header .pg-context-panel .pg-header-inspector .pg-inspector { position:static;overflow:visible;border:0;border-radius:0;background:none;box-shadow:none;padding:0; }
+.pg-context-panel .pg-meaning { min-width:0; }
+.pg-header-options { position:relative; }
+.pg-settings-option,.pg-settings-info-wrap { display:flex;align-items:center; }
+.pg-settings-info-trigger { position:relative;display:grid;place-items:center;width:32px;height:36px;border-radius:7px;color:var(--theme-muted,#baabca); }
+.pg-settings-info-trigger:hover,.pg-settings-info-trigger[aria-expanded="true"] { color:var(--theme-text,#eadbf6);background:var(--theme-selected,#2b2434); }
+.pg-settings-info-trigger.has-issue { color:var(--theme-secondary-text,#d4b78c); }
+.pg-info-status { position:absolute;top:6px;right:5px;width:5px;height:5px;border-radius:50%;background:currentColor; }
+.pg-settings-information { top:calc(100% + 8px);left:0;right:auto;width:min(360px,100%);z-index:15; }
+.pg-settings-information h3 { font-size:13px;color:var(--theme-text,#eadbf6);margin:0 0 12px; }
+.pg-settings-information p { margin-top:10px; }
+.pg-settings-connection { border-top:1px solid var(--theme-line,#51445b);margin-top:14px;padding-top:4px; }
+.pg-settings-information .pg-link { text-align:left;font-size:12px;line-height:1.6;min-height:36px;color:var(--theme-accent,#cdb1ef); }
+@media(max-width:800px) { .pg-context-panel .pg-header-inspector { border-inline-start:0;border-top:1px solid var(--theme-line,#38323f);padding-inline-start:0;padding-top:16px; } }
+@media(pointer:coarse) { .pg-settings-info-trigger { min-width:44px;min-height:44px; } .pg-settings-information .pg-link { min-height:44px; } }
+/* The settings popover uses the control row as its anchor, including on phones. */
+.pg-settings-information { transform:none; }
+.pg-settings-information { overflow:hidden; }
+.pg-settings-information-scroll { max-height:calc(min(420px,60dvh) - 36px);overflow:auto;overscroll-behavior:contain;padding-inline-end:6px;scrollbar-color:var(--ui-muted,#aaa4b7) transparent; }
