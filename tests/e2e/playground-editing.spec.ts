@@ -1,3 +1,4 @@
+import { savedBoard, importSavedBoard } from "./helpers/playground-workspace";
 import {expect,test,type Page} from "@playwright/test";
 
 const fixture={schemaVersion:1,title:"A small scene",intent:"",interpretation:"",nodes:[
@@ -28,7 +29,7 @@ test('canvas Undo, Redo and Reset shortcuts preserve native text editing and pre
  await page.keyboard.press('Control+z');expect(await positions(page)).toEqual(original);await page.keyboard.press('Control+Shift+z');expect(await positions(page)).toEqual(moved);
  await page.getByRole('button',{name:'Zoom in',exact:true}).click();await page.locator('.pg-board').focus();await page.keyboard.press('Control+r');await expect(page.locator('.pg-node')).toHaveCount(0);await expect(page.getByLabel('Canvas zoom')).toHaveText('100%');expect(navigations).toBe(0);
  await page.keyboard.press('Control+z');await expect(page.locator('.pg-node')).toHaveCount(3);expect(await positions(page)).toEqual(moved);await page.keyboard.press('Meta+z');expect(await positions(page)).toEqual(original);await page.keyboard.press('Meta+Shift+z');expect(await positions(page)).toEqual(moved);
- await page.getByRole('button',{name:'Add context',exact:true}).click();const title=page.getByLabel('Scene title',{exact:true});await expect(title).toBeVisible();await title.focus();await title.press('End');await title.pressSequentially(' native');await title.press('Control+z');await expect(page.locator('.pg-node')).toHaveCount(3);expect(await positions(page)).toEqual(moved);
+ await page.getByRole('button',{name:'Context',exact:true}).click();const title=page.getByLabel('Scene title',{exact:true});await expect(title).toBeVisible();await title.focus();await title.press('End');await title.pressSequentially(' native');await title.press('Control+z');await expect(page.locator('.pg-node')).toHaveCount(3);expect(await positions(page)).toEqual(moved);
  await page.getByRole('button',{name:'Open emoji picker',exact:true}).click();const search=page.getByLabel('Search emojis in English or Spanish');await search.pressSequentially('moon');await search.press('Control+z');expect(await positions(page)).toEqual(moved);
  const intercepted=await search.evaluate(el=>{const event=new KeyboardEvent('keydown',{key:'r',ctrlKey:true,bubbles:true,cancelable:true});el.dispatchEvent(event);return event.defaultPrevented;});expect(intercepted).toBe(false);expect(navigations).toBe(0);
 });
@@ -70,7 +71,7 @@ test('copy/paste shortcuts preserve a group, clipboard snapshot, internal relati
  await page.keyboard.press('Control+c');await expect(page.locator('.pg-canvas-notice')).toContainText('2 objects copied');
  await page.keyboard.press('Control+v');await expect(page.locator('.pg-node')).toHaveCount(5);await expect(page.locator('.pg-node[aria-pressed="true"]')).toHaveCount(2);
  const original=await positions(page);expect(original.slice(3).map(n=>[n.scale,n.rotation])).toEqual(original.slice(0,2).map(n=>[n.scale,n.rotation]));
- await page.getByRole('button',{name:'Add relationships',exact:true}).click();await expect(page.locator('.pg-relationships')).toContainText('orbits');await expect(page.locator('.pg-relationships>div')).toHaveCount(3);
+ await page.getByRole('button',{name:'Context',exact:true}).click();await page.getByRole('button',{name:'Add relationships',exact:true}).click();await expect(page.locator('.pg-relationships')).toContainText('orbits');await expect(page.locator('.pg-relationships>div')).toHaveCount(3);
  await page.getByRole('button',{name:'Undo',exact:true}).click();await expect(page.locator('.pg-node')).toHaveCount(3);await expect(page.locator('.pg-relationships>div')).toHaveCount(2);
  await page.getByRole('button',{name:'Redo',exact:true}).click();await expect(page.locator('.pg-node')).toHaveCount(5);
  // Copy in an editable field must remain ordinary text copy.
@@ -89,7 +90,7 @@ test('Layers selects hidden objects; Arrange changes persisted overlap order and
  await page.locator('.pg-arrange summary').click();await page.getByRole('button',{name:'Bring to front',exact:true}).click();
  expect((await positions(page)).map(n=>n.id)).toEqual(['planet','rocket','moon']);await expect(page.locator('[data-id="moon"]')).toHaveCSS('z-index','3');
  await page.getByRole('button',{name:'Undo',exact:true}).click();expect((await positions(page)).map(n=>n.id)).toEqual(['moon','planet','rocket']);
- await page.getByRole('button',{name:'Redo',exact:true}).click();await expect(page.getByText('Saved on this device',{exact:true})).toBeVisible();await page.reload();await page.getByRole('button',{name:'Playground',exact:true}).click();
+ await page.getByRole('button',{name:'Redo',exact:true}).click();await expect(page.getByText('Saved on this device',{exact:true})).toBeVisible();const snapshot=await savedBoard(page);await page.reload();await page.getByRole('button',{name:'Playground',exact:true}).click();await expect(page.locator('.pg-node')).toHaveCount(0);await importSavedBoard(page,snapshot);
  await expect.poll(async()=> (await positions(page)).map(n=>n.id)).toEqual(['planet','rocket','moon']);
 });
 

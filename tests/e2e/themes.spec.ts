@@ -110,7 +110,7 @@ test("new palettes preserve accessible text contrast in discovery and playground
   }
 });
 
-test("theme changes preserve black hole geometry and the original result, history grid and reader styles", async ({ page }) => {
+test("theme changes preserve black hole geometry, reading typography and history grid layout", async ({ page }) => {
   await fixtures(page);
   const geometry = () => page.locator(".black-hole").evaluate(svg => [...svg.querySelectorAll("path,circle,ellipse")].map(n => Object.fromEntries(["d", "cx", "cy", "r", "rx", "ry"].map(a => [a, n.getAttribute(a)]))));
   const originalGeometry = await geometry();
@@ -123,7 +123,7 @@ test("theme changes preserve black hole geometry and the original result, histor
   await page.evaluate(() => document.fonts.ready);
   const styles = () => page.evaluate(() => Object.fromEntries([".pg-output .pg-story-page", ".pg-output .pg-story-title", ".pg-output .pg-story-prose", ".pg-output .pg-story-actions button", ".pg-results .pg-result-list", ".pg-results .pg-history-card", ".pg-results .pg-history-title", ".pg-results .pg-history-footer"].map(selector => {
     const style = getComputedStyle(document.querySelector(selector)!);
-    return [selector, Object.fromEntries(["color", "backgroundColor", "backgroundImage", "fontFamily", "fontSize", "fontWeight", "lineHeight", "borderRadius", "borderColor", "padding", "margin", "display", "gridTemplateColumns", "gap"].map(property => [property, style.getPropertyValue(property.replace(/[A-Z]/g, c => "-" + c.toLowerCase()))]))];
+    return [selector, Object.fromEntries(["fontFamily", "fontSize", "fontWeight", "lineHeight", "padding", "margin", "display", "gridTemplateColumns", "gap"].map(property => [property, style.getPropertyValue(property.replace(/[A-Z]/g, c => "-" + c.toLowerCase()))]))];
   })));
   const originalStyles = await styles();
   for (const theme of themes) { await page.getByLabel("Themes", { exact: true }).selectOption(theme); expect(await styles()).toEqual(originalStyles); }
@@ -158,5 +158,133 @@ test("theme controls and content fit desktop, tablet and phone widths", async ({
       const box = await page.getByLabel("Themes", { exact: true }).boundingBox();
       expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.x + box!.width).toBeLessThanOrEqual(width);
     }
+  }
+});
+
+test("switch states remain distinct and canvas borders meet continuously in every theme", async ({ page }) => {
+  await fixtures(page);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  for (const theme of themes) {
+    await page.getByLabel("Themes", { exact: true }).selectOption(theme);
+    const motion = page.locator(".motion-toggle");
+    const switchColors = (selector: string, pseudo: string) => page.locator(selector).evaluate((el, pseudo) => ({ track: getComputedStyle(el).backgroundColor, knob: getComputedStyle(el, pseudo).backgroundColor, left: getComputedStyle(el, pseudo).left }), pseudo);
+    const off = await switchColors(".toggle", "::after");
+    expect(off.knob).not.toBe(off.track);
+    await motion.click();
+    const on = await switchColors(".toggle", "::after");
+    expect(on.knob).not.toBe(on.track);
+    expect(on.left).not.toBe(off.left);
+    expect(on.track).not.toBe(off.track);
+    await motion.click();
+    await page.getByRole("button", { name: "Playground", exact: true }).click();
+    await page.getByRole("button", { name: "Context", exact: true }).click();
+    const relation = page.getByRole("button", { name: "Add relationships", exact: true });
+    const relationOff = await switchColors(".pg-toggle-switch", "::before");
+    expect(relationOff.knob).not.toBe(relationOff.track);
+    await relation.click();
+    const relationOn = await switchColors(".pg-toggle-switch", "::before");
+    expect(relationOn.knob).not.toBe(relationOn.track);
+    expect(relationOn.left).not.toBe(relationOff.left);
+    expect(relationOn.track).not.toBe(relationOff.track);
+    await relation.click();
+    await page.getByRole("button", { name: "Context", exact: true }).click();
+    const borders = await page.evaluate(() => {
+      const outer = getComputedStyle(document.querySelector(".pg-stage")!), toolbar = getComputedStyle(document.querySelector(".pg-space-toolbar")!), board = getComputedStyle(document.querySelector(".pg-board")!);
+      return { outerRadius: parseFloat(outer.borderTopLeftRadius), outerWidth: parseFloat(outer.borderLeftWidth), topRadius: parseFloat(toolbar.borderTopLeftRadius), bottomRadius: parseFloat(board.borderBottomLeftRadius), boardBorder: parseFloat(board.borderLeftWidth) };
+    });
+    expect(borders.boardBorder).toBe(0);
+    expect(borders.topRadius).toBe(borders.bottomRadius);
+    expect(Math.abs(borders.outerRadius - borders.outerWidth - borders.topRadius)).toBeLessThanOrEqual(1);
+    await page.getByRole("button", { name: "Discover", exact: true }).click();
+  }
+});
+
+test("themed story surfaces and reader remain accessible with long content and contained scrolling", async ({ page }) => {
+  await fixtures(page);
+  await page.route("**/api/generations", route => route.fulfill({ json: route.request().method() === "GET" ? { configured: true, models: ["test/text"] } : { result: { title: "Morning by the sea", text: "Morning light glimmers across the water. ".repeat(140), model: "test/text", provider: "openrouter" } } }));
+  await page.getByRole("button", { name: "Playground", exact: true }).click();
+  await page.locator('input[type="file"]').setInputFiles({ name: "scene.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(board)) });
+  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await expect(page.locator(".pg-history-card")).toHaveCount(1);
+  for (const theme of themes) {
+    await page.getByLabel("Themes", { exact: true }).selectOption(theme);
+    for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await expect(page.locator(".motion-toggle")).toBeVisible();
+      await expect(page.locator(".pg-output")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(page.locator(".pg-results")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      if (viewport.width === 1440) {
+        await page.getByRole("button", { name: "Generate", exact: true }).hover();
+        const shelfReport = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).exclude("nextjs-portal").analyze();
+        expect(shelfReport.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => ({ target: n.target, summary: n.failureSummary })) })), `${theme}, shelf and hovered primary action`).toEqual([]);
+      }
+      await page.locator(".pg-history-read").click();
+      const reader = page.locator(".pg-reader");
+      await expect(reader).toBeVisible();
+      await reader.getByRole("button", { name: "Close reading view", exact: true }).focus();
+      await page.keyboard.press("Shift+Tab");
+      expect(await reader.evaluate(el => el.contains(document.activeElement))).toBe(true);
+      await page.keyboard.press("Tab");
+      await expect(reader.getByRole("button", { name: "Close reading view", exact: true })).toBeFocused();
+      expect(await reader.evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true);
+      const scroll = page.locator(".pg-reader-scroll");
+      expect(await scroll.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+      const readerBox = (await reader.boundingBox())!, scrollBox = (await scroll.boundingBox())!;
+      expect(scrollBox.x + scrollBox.width).toBeLessThan(readerBox.x + readerBox.width - 5);
+      expect(scrollBox.y + scrollBox.height).toBeLessThan(readerBox.y + readerBox.height - 5);
+      const report = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).exclude("nextjs-portal").analyze();
+      expect(report.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => ({ target: n.target, summary: n.failureSummary })) })), `${theme}, reader ${viewport.width}`).toEqual([]);
+      await page.keyboard.press("Escape");
+      await expect(page.locator(".pg-history-read")).toBeFocused();
+    }
+  }
+});
+
+test("portal scrollbars stay inside the modal and close controls remain reachable across themes", async ({ page }) => {
+  await fixtures(page);
+  await page.getByRole("textbox", { name: /Search a word/ }).fill("octopus");
+  await page.getByLabel("octopus", { exact: true }).click();
+  for (const theme of themes) {
+    await page.getByLabel("Themes", { exact: true }).selectOption(theme);
+    for (const viewport of [{ width: 1440, height: 700 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await page.getByRole("button", { name: "Open portal", exact: true }).last().click();
+      const gallery = page.locator(".gallery"), scroll = page.locator(".gallery-scroll");
+      await expect(gallery).toBeVisible();
+      await expect(gallery).toHaveCSS("opacity", "1");
+      await expect(page.locator(".gallery-backdrop")).toHaveCSS("opacity", "1");
+      await expect(page.locator(".wikipedia-section")).toHaveAttribute("aria-busy", "false");
+      const report = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).exclude("nextjs-portal").analyze();
+      expect(report.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => ({ target: n.target, summary: n.failureSummary })) })), `${theme}, gallery ${viewport.width}`).toEqual([]);
+      await expect(gallery).toHaveCSS("overflow", "hidden");
+      await expect(scroll).toHaveCSS("overflow", "auto");
+      expect(await gallery.evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true);
+      await scroll.evaluate(el => el.scrollTop = el.scrollHeight);
+      await expect(page.getByRole("button", { name: "Close gallery", exact: true })).toBeInViewport();
+      const box = (await gallery.boundingBox())!, inner = (await scroll.boundingBox())!;
+      expect(inner.x + inner.width).toBeLessThan(box.x + box.width - 5);
+      expect(inner.y + inner.height).toBeLessThan(box.y + box.height - 5);
+      await page.getByRole("button", { name: "Close gallery", exact: true }).click();
+    }
+  }
+});
+
+test("canvas artwork retains its size after phone, desktop and fullscreen round trips", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await fixtures(page);
+  await page.getByRole("button", { name: "Playground", exact: true }).click();
+  await page.locator('input[type="file"]').setInputFiles({ name: "scene.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(board)) });
+  const glyphSize = () => page.locator(".pg-node>span").first().evaluate(el => parseFloat(getComputedStyle(el).fontSize));
+  const initial = await glyphSize();
+  for (const theme of themes) {
+    await page.getByLabel("Themes", { exact: true }).selectOption(theme);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(glyphSize).toBeLessThan(initial);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await expect.poll(glyphSize).toBeCloseTo(initial, 1);
+    await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
+    await expect(page.locator(".pg-stage")).toHaveClass(/is-fullscreen/);
+    await page.getByRole("button", { name: "Exit fullscreen", exact: true }).click();
+    await expect.poll(glyphSize).toBeCloseTo(initial, 1);
   }
 });

@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {boundedZoom,fitCamera,steppedZoom,worldPoint,zoomAt} from "@/features/playground/camera";
+import {boundedZoom,fitCamera,resizeCamera,resizeScale,steppedZoom,worldPoint,zoomAt} from "@/features/playground/camera";
 import {emptyComposition,parseComposition} from "@/features/playground/model";
 import {emojiById} from "@/lib/catalog";
 import {createNode} from "@/features/playground/model";
@@ -29,5 +29,17 @@ describe("canvas camera",()=>{
     const board=emptyComposition();board.nodes=[createNode(emojiById.get("2764")!,"en","outside",0,{x:-300,y:700})];
     expect(parseComposition(JSON.parse(JSON.stringify(board)))).toEqual(board);
     expect(()=>parseComposition({...board,nodes:[{...board.nodes[0],x:NaN}]})).toThrow();
+  });
+  it("restores zoom and the center after repeated changes in viewport aspect ratio",()=>{
+    const world={width:900,height:550},original={x:-70,y:35,zoom:1.3};
+    const desktop={width:900,height:550},phone={width:350,height:480};
+    let camera=original,reference=1;
+    for(let cycle=0;cycle<5;cycle++){
+      camera=resizeCamera(camera,desktop,phone,world);reference*=resizeScale(desktop,phone,world);
+      camera=resizeCamera(camera,phone,desktop,world);reference*=resizeScale(phone,desktop,world);
+    }
+    expect(camera.zoom).toBeCloseTo(original.zoom);
+    expect(camera.x).toBeCloseTo(original.x);expect(camera.y).toBeCloseTo(original.y);
+    expect(reference).toBeCloseTo(1);
   });
 });

@@ -99,7 +99,13 @@ export function StoryModal({ title, locale, onClose, children }: { title: string
     document.body.style.overflow = "hidden";
     return () => { element.close(); document.body.style.overflow = overflow; previousFocus?.focus({ preventScroll: true }); };
   }, []);
-  return <dialog ref={dialog} className="pg-reader" aria-label={title} onCancel={e => { e.preventDefault(); onClose(); }} onClick={e => { if (e.target === e.currentTarget) { const rect = e.currentTarget.getBoundingClientRect(); if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) onClose(); } }}><header className="pg-reader-header"><span><BookOpen size={16}/>{storyLabels[locale].history}</span><button autoFocus aria-label={storyLabels[locale].close} onClick={onClose}><X size={20}/></button></header>{children}</dialog>;
+  return <dialog ref={dialog} className="pg-reader" aria-label={title} onCancel={e => { e.preventDefault(); onClose(); }} onKeyDown={e => {
+    if (e.key !== "Tab") return;
+    const targets = [...e.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])')].filter(element => element.getClientRects().length > 0);
+    const first = targets[0], last = targets.at(-1);
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+  }} onClick={e => { if (e.target === e.currentTarget) { const rect = e.currentTarget.getBoundingClientRect(); if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) onClose(); } }}><header className="pg-reader-header"><span><BookOpen size={16}/>{storyLabels[locale].history}</span><button autoFocus aria-label={storyLabels[locale].close} onClick={onClose}><X size={20}/></button></header><div className="pg-reader-scroll">{children}</div></dialog>;
 }
 
 export function ReadingButton({ locale, onClick }: { locale: Locale; onClick: () => void }) {

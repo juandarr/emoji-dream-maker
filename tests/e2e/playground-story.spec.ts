@@ -24,7 +24,7 @@ for(const locale of ["en","es"] as const)test(`${locale}: localized output title
   const reader=page.getByRole("dialog",{name:title,exact:true});await expect(reader.locator(".pg-story-title")).toHaveText(title);await expect(reader.locator(".pg-story-prose")).toHaveText(prose);
   await page.keyboard.press("Escape");await expect(page.getByText(locale==="es"?"Guardado en este dispositivo":"Saved on this device",{exact:true})).toBeVisible();
   await page.reload();await page.getByRole("button",{name:locale==="es"?"Espacio creativo":"Playground",exact:true}).click();
-  await expect(page.locator(".pg-output .pg-story-title")).toHaveText(title);await expect(page.locator(".pg-history-title").first()).toHaveText(title);
+  await expect(page.locator(".pg-output .pg-story-prose")).toHaveCount(0);await expect(page.locator(".pg-history-title").first()).toHaveText(title);await page.locator(".pg-history-read").first().click();await expect(reader.locator(".pg-story-title")).toHaveText(title);await expect(reader.locator(".pg-story-prose")).toHaveText(prose);
 });
 
 async function open(page: Page) {
@@ -58,7 +58,8 @@ test("the result motif retains its saved canvas symbols through board changes, r
   await expect(page.getByRole("button", { name: "Open reading view", exact: true })).toBeFocused();
   await expect(page.getByText("Saved on this device", { exact: true })).toBeVisible();
   await page.reload();await page.getByRole("button", { name: "Playground", exact: true }).click();
-  await expect(motif.locator(".pg-vector-glyph")).toHaveText(glyphs.slice(0, 5));
+  await expect(page.locator(".pg-output .pg-story-prose")).toHaveCount(0);
+  await page.locator(".pg-history-read").click();await expect(page.locator(".pg-reader .pg-story-symbol-motif .pg-vector-glyph")).toHaveText(glyphs.slice(0, 5));
 });
 
 test("local typography, decorative opening letter and reader remain usable at narrow widths", async ({ page }) => {

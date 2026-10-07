@@ -8,7 +8,7 @@ import {playgroundLabels} from "./labels";
 import {nodeMeaning} from "./localization";
 import EmojiArtwork from "./emoji-artwork";
 import type {Locale} from "@/lib/types";
-import {boundedZoom,fitCamera,resizeCamera,steppedZoom,GLYPH_SIZE,MAX_ZOOM,MIN_ZOOM,worldPoint,zoomAt,type Camera,type Point} from "./camera";
+import {boundedZoom,fitCamera,resizeCamera,resizeScale,steppedZoom,GLYPH_SIZE,MAX_ZOOM,MIN_ZOOM,worldPoint,zoomAt,type Camera,type Point} from "./camera";
 import {CanvasActions,LayerPanel} from "./CanvasActions";
 import ToolbarTooltip from "./ToolbarTooltip";
 
@@ -138,8 +138,9 @@ export default function Canvas({onUndo,onRedo,onReset,notice,onCopyEvent,onPaste
       const width=el.clientWidth,height=el.clientHeight;if(!width||!height)return;
       if(!initialized){initialized=true;setWorld({width,height});setCamera({x:0,y:0,zoom:1});}
       else {const old=sizeRef.current,next={width,height},saved=embeddedView.current;
-        if(previousFullscreen.current&&!fullscreenRef.current&&saved){setCamera(resizeCamera(saved.camera,saved.size,next));reference(saved.reference*Math.min(width/saved.size.width,height/saved.size.height));embeddedView.current=null;fitActive.current=false;}
-        else {setCamera(c=>resizeCamera(c,old,next));reference(referenceRef.current*Math.min(width/old.width,height/old.height));}
+        const worldSize={width:geometryRef.current.width,height:geometryRef.current.height};
+        if(previousFullscreen.current&&!fullscreenRef.current&&saved){setCamera(resizeCamera(saved.camera,saved.size,next,worldSize));reference(saved.reference*resizeScale(saved.size,next,worldSize));embeddedView.current=null;fitActive.current=false;}
+        else {setCamera(c=>resizeCamera(c,old,next,worldSize));reference(referenceRef.current*resizeScale(old,next,worldSize));}
       }
       previousFullscreen.current=fullscreenRef.current;
       sizeRef.current={width,height};setSize({width,height});

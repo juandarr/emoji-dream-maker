@@ -181,7 +181,7 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
     subjectController.current?.abort();setSearching(false);
     setResults(previous=>Object.fromEntries(providers.map(p=>[p,(p==="wikipedia"?sameArticle:sameMedia)?previous[p]:loading])) as Record<Provider,ProviderResult>);
     setTopic(next);setChanging(false);setSubjectResults(null);
-    requestAnimationFrame(()=>{dialog.current?.scrollTo({top:0,behavior:"instant"});dialog.current?.querySelector<HTMLElement>("#gallery-title")?.focus();});
+    requestAnimationFrame(()=>{dialog.current?.querySelector(".gallery-scroll")?.scrollTo({top:0,behavior:"instant"});dialog.current?.querySelector<HTMLElement>("#gallery-title")?.focus();});
   }
   function chooseTopic(next:TopicCandidate){setTrail(previous=>[...previous,topic].slice(-20));navigate(next);}
   function goBack(){const previous=trail.at(-1);if(previous){setTrail(trail.slice(0,-1));navigate(previous);}}
@@ -191,6 +191,7 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
       if(event.target instanceof HTMLMediaElement)dialog.current?.querySelectorAll<HTMLMediaElement>("audio, video").forEach(media=>{if(media!==event.target)media.pause();});
     }} initial={{opacity:0,y:reduced?0:32,scale:reduced?1:.97}} animate={{opacity:1,y:0,scale:1}} exit={{opacity:0,y:reduced?0:20}} transition={{duration:reduced?.1:.28}}>
       <div className="gallery-top"><span><Sparkles size={14}/>{t.discovery}</span><button className="icon-button" onClick={closeGallery} aria-label={t.close}><X size={22}/></button></div>
+      <div className="gallery-scroll">
       <header className="gallery-header"><span className="gallery-emoji">{glyph}</span><div><h2 id="gallery-title" lang={resolving?locale:topic.language} tabIndex={-1}>{resolving?emoji.labels[locale]:topic.label}</h2>{(resolving||topic.suggested)&&<p className="gallery-subtitle">{resolving?t.loadingSubject:t.suggested}</p>}</div><button className={`favorite-button ${isFavorite(discovery)?"active":""}`} disabled={resolving} aria-pressed={isFavorite(discovery)} aria-label={isFavorite(discovery)?t.unfavorite:t.favorite} onClick={()=>onFavorite(discovery)}><Heart size={20} fill={isFavorite(discovery)?"currentColor":"none"}/></button></header>
       {trail.length>0&&<nav className="exploration-trail" aria-label={locale==="es"?"Camino de exploración":"Exploration path"}><button onClick={goBack}>← {locale==="es"?"Volver a":"Back to"} {trail.at(-1)?.label}</button></nav>}
       <div className="topic-bar"><div>{alternatives.some(c=>c.label!==topic.label)&&<span>{t.alternative}</span>}{alternatives.filter(c=>c.label!==topic.label).map(c=><button key={c.wikiTitle||c.label} lang={c.language} onClick={()=>chooseTopic(c)} disabled={resolving}>{c.label}<ChevronRight size={12}/></button>)}</div><button className="change-subject" aria-expanded={changing} aria-controls="gallery-subject-picker" onClick={()=>setChanging(!changing)} disabled={resolving}><Search size={14}/>{t.change}</button></div>
@@ -198,6 +199,7 @@ export default function Gallery({emoji,glyph,locale,initialTopic,reduced,onClose
       <div className="gallery-body"><WikipediaContext key={`${topic.label}:${topic.language}`} result={resolving?loading:results.wikipedia} topic={topic} emojiLabel={emoji.labels[locale]} locale={locale} reduced={reduced} retry={()=>void loadSource("wikipedia")} change={()=>setChanging(true)} choose={chooseTopic}/><ArtGallery key={`${topic.label}:${topic.language}:art`} result={results.art} locale={locale} reduced={reduced} retry={()=>void loadSource("art")} onOpen={()=>{pauseMedia();setActiveVideo(null);}}/>{providers.filter(p=>p!=="wikipedia"&&p!=="art").map(p=><MediaSection key={`${topic.label}:${topic.language}:${p}`} provider={p} result={results[p]} locale={locale} reduced={reduced} retry={()=>void loadSource(p)} onPlay={item=>{pauseMedia();setActiveVideo(item);}}/>)}</div>
       {activeVideo&&<VideoPlayer key={activeVideo.id} item={activeVideo} locale={locale} onClose={()=>setActiveVideo(null)}/>}
       <footer className="gallery-footer"><Check size={13}/>{t.stop}</footer>
+      </div>
     </motion.div>
   </motion.div>;
 }

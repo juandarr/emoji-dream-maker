@@ -25,9 +25,10 @@ The palettes are app-specific interpretations of those references.
   filaments, lensing, gravity response, and animation behavior. Themes apply only
   color and glow filters to the existing SVG, including its energy brightness.
 - The generated result page, result history grid, and reading view retain their
-  original colors, typography, ornaments, layout, and controls. Theme surface
-  selectors exclude `.pg-output`, `.pg-results`, `.pg-reader`, and their children.
-  On light themes, results keep their original dark surrounding context.
+  typography, ornament geometry, layout, and controls. Following the visual audit,
+  their colors now match the selected theme. Transparent result wrappers avoid dark
+  rectangular blocks and corner wedges in light themes. Explicit component rules
+  style these surfaces independently of the general palette overrides.
 - Classic is excluded from all palette and motif overrides.
 
 ## Orbit geometry
@@ -50,9 +51,14 @@ also apply to the position wrappers.
 `src/app/themes.css` owns the palettes, motif details, theme selector, orbital
 transforms, and black hole filters. `src/app/theme-surfaces.css` applies semantic
 theme tokens to the existing interface surfaces while excluding protected
-results. The original stylesheets and protected components stay intact.
+results. `src/app/theme-components.css`, loaded last, supplies explicit rules for
+switch states, coherent canvas corners, themed reading surfaces, interactive
+borders, focus cues, and contained modal scrolling. The original black hole and
+reading typography remain intact.
 
 `tests/e2e/themes.spec.ts` covers saved-theme initialization, localization,
 responsive layouts, animated orbit alignment and orientation, drag-and-drop,
-palette accessibility, and unchanged black hole geometry and result styling.
+palette accessibility, unchanged black hole geometry and reading layout,
+visible switch states, continuous canvas corners, contained modal scrollbars,
+and reversible viewport resizing. See [the visual audit](theme-visual-audit.md).
 Storage tests cover migration and rejection of malformed theme values.

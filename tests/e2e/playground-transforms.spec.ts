@@ -1,3 +1,4 @@
+import { savedBoard, importSavedBoard } from "./helpers/playground-workspace";
 import {expect,test,type Page,type Locator} from "@playwright/test";
 const fixture={schemaVersion:1,title:"Transform practice",intent:"",interpretation:"",nodes:[
   {id:"octopus",emojiId:"1F419",glyph:"🐙",label:"Octopus",meaning:"Octopus",note:"",role:"subject",x:20,y:35},
@@ -42,7 +43,7 @@ test("area-selected groups move, resize, rotate, persist and delete in single un
   await page.getByRole("button",{name:"Redo",exact:true}).click();expect(await values(page)).toEqual(rotated);
   await page.locator(".pg-object-delete").click();await expect(page.locator(".pg-node")).toHaveCount(1);await expect(page.locator(".pg-relationships")).toHaveCount(0);
   await page.getByRole("button",{name:"Undo",exact:true}).click();expect(await values(page)).toEqual(rotated);await expect(page.locator(".pg-relationships")).toContainText("friends");
-  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect.poll(()=>values(page)).toEqual(rotated);
+  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();const snapshot=await savedBoard(page);await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-node")).toHaveCount(0);await importSavedBoard(page,snapshot);await expect.poll(()=>values(page)).toEqual(rotated);
   await page.locator(".pg-node").nth(0).click();await page.locator(".pg-node").nth(1).click({modifiers:["Shift"]});await page.keyboard.press("Delete");await expect(page.locator(".pg-node")).toHaveCount(1);
 });
 

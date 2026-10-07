@@ -1,0 +1,113 @@
+/* Component contracts: preserve silhouettes, state contrast and border ownership.
+   These rules follow the surface palette; ornamental paper keeps its typography. */
+:root {
+  --ui-muted:#aaa4b7;
+}
+:root[data-theme]:not([data-theme="classic"]) {
+  --ui-muted:var(--theme-muted);
+  --theme-control-line:color-mix(in srgb,var(--theme-muted) 65%,var(--theme-line));
+  --story-paper:var(--theme-panel); --story-edge:var(--theme-line);
+  --story-ink:var(--theme-text); --story-ornament:var(--theme-secondary-text);
+}
+:root[data-theme="cyberpunk"]:not([data-theme="classic"]) { --story-paper:#111e2d; --story-edge:#497080; --story-ornament:#55f0e6; }
+:root[data-theme="solarpunk"]:not([data-theme="classic"]) { --story-paper:#fffdf2; --story-edge:#a1b28d; --story-ornament:#796126; }
+:root[data-theme="retro"]:not([data-theme="classic"]) { --story-paper:#fff2d7; --story-edge:#a1835a; --story-ornament:#9a432c; }
+
+/* Scroll only inside the shell. The close control stays reachable on long pages. */
+.gallery { display:flex;flex-direction:column;overflow:hidden; }
+.gallery-top { flex-shrink:0; }
+.gallery-scroll { min-height:0;overflow:auto;overscroll-behavior:contain;margin:0 6px 8px 0;scroll-padding:16px; }
+.pg-reader { overflow:hidden; }
+.pg-reader[open] { display:flex;flex-direction:column; }
+.pg-reader-header { flex-shrink:0; }
+.pg-reader-scroll { min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 6px 0 0;scroll-padding:12px; }
+:is(.gallery-scroll,.pg-reader-scroll) { scrollbar-color:var(--ui-muted) transparent; }
+:is(.gallery-scroll,.pg-reader-scroll)::-webkit-scrollbar-thumb { background:var(--ui-muted);border-radius:999px; }
+
+/* One outer border; children meet at a straight seam with matching corner arcs.
+   Keep overflow visible so floating pickers and resize handles remain usable. */
+:root[data-theme]:not([data-theme="classic"]) .pg-stage .pg-space-toolbar { border-radius:calc(var(--theme-radius) - 1px) calc(var(--theme-radius) - 1px) 0 0; }
+:root[data-theme]:not([data-theme="classic"]) .pg-stage .pg-board { border:0;border-radius:0 0 calc(var(--theme-radius) - 1px) calc(var(--theme-radius) - 1px); }
+:root[data-theme]:not([data-theme="classic"]) .pg-stage.is-fullscreen { border:0;border-radius:0; }
+:root[data-theme]:not([data-theme="classic"]) .pg-stage.is-fullscreen :is(.pg-space-toolbar,.pg-board) { border-radius:0; }
+
+/* Switches are semantic controls, never decorative surface swatches. */
+:root[data-theme]:not([data-theme="classic"]) :is(.toggle,.pg-toggle-switch) { border-radius:999px;background:var(--theme-muted);flex-shrink:0; }
+:root[data-theme]:not([data-theme="classic"]) .toggle:after,
+:root[data-theme]:not([data-theme="classic"]) .pg-toggle-switch:before { border-radius:50%;background:var(--theme-input); }
+:root[data-theme]:not([data-theme="classic"]) .toggle.on,
+:root[data-theme]:not([data-theme="classic"]) [aria-expanded="true"]>.pg-toggle-switch { background:var(--theme-accent); }
+:root[data-theme]:not([data-theme="classic"]) .toggle.on:after,
+:root[data-theme]:not([data-theme="classic"]) [aria-expanded="true"]>.pg-toggle-switch:before { background:var(--theme-on-accent); }
+:root[data-theme]:not([data-theme="classic"]) .pg-header-toggle[aria-expanded="true"] { background:var(--theme-selected);color:var(--theme-selected-text); }
+.motion-toggle { min-height:36px; }
+@media(max-width:720px) { .preferences .motion-toggle { display:flex;font-size:11px;padding:3px 0;gap:5px;min-height:32px; } }
+@media(pointer:coarse) { .preferences .motion-toggle { min-height:44px; } }
+
+/* Transparent context removes the square dark wedges around rounded paper. */
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-output,.pg-results) { background:transparent;color:var(--theme-text); }
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-story-actions button,.pg-story-copy-status,.pg-story-details,.pg-shelf-heading>span,.pg-shelf-empty,.pg-deleted-title) { color:var(--theme-muted); }
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-story-details,.playground>.pg-results) { border-color:var(--theme-line); }
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-shelf-heading h2,.pg-history-title) { color:var(--theme-text); }
+:root[data-theme]:not([data-theme="classic"]) .pg-history-card { background:linear-gradient(125deg,var(--theme-panel),var(--theme-raised));border-color:var(--theme-line);border-radius:var(--theme-radius); }
+:root[data-theme]:not([data-theme="classic"]) .pg-history-card:hover { border-color:var(--theme-accent); }
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-history-meta,.pg-history-meta-actions,.pg-history-excerpt,.pg-history-delete) { color:var(--theme-muted); }
+:root[data-theme]:not([data-theme="classic"]) .pg-history-footer>span:last-child { color:var(--theme-secondary-text); }
+:root[data-theme]:not([data-theme="classic"]) .pg-history-delete:hover { background:var(--theme-selected);color:var(--theme-accent); }
+:root[data-theme]:not([data-theme="classic"]) .pg-shelf-empty { border-color:var(--theme-line);border-radius:var(--theme-radius); }
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-history-expansion button,.pg-history-notice) { border-color:var(--theme-line);border-radius:var(--theme-control-radius);color:var(--theme-text);background:var(--theme-panel); }
+:root[data-theme]:not([data-theme="classic"]) .pg-history-expansion button:hover { border-color:var(--theme-accent);background:var(--theme-selected); }
+:root[data-theme]:not([data-theme="classic"]) .pg-history-undo { color:var(--theme-accent); }
+:root[data-theme]:not([data-theme="classic"]) .pg-reader { background:var(--theme-panel);color:var(--theme-text);border-color:var(--theme-line);border-radius:var(--theme-radius); }
+:root[data-theme]:not([data-theme="classic"]) .pg-reader-header>span { color:var(--theme-muted); }
+:root[data-theme]:not([data-theme="classic"]) .pg-reader-header button { border-color:var(--theme-line); }
+:root[data-theme]:not([data-theme="classic"]) .pg-reader-header button:hover { color:var(--theme-accent);background:var(--theme-selected); }
+:root[data-theme]:not([data-theme="classic"]) .pg-reader::backdrop { background:color-mix(in srgb,var(--theme-shadow) 65%,transparent); }
+
+/* Restyle the existing paper and its original ornaments; keep all geometry. */
+:root[data-theme]:not([data-theme="classic"]) .pg-story-page { --pg-ink:var(--story-ink);background:radial-gradient(ellipse at 50% 25%,var(--story-paper),color-mix(in srgb,var(--story-paper) 94%,var(--story-ornament)));border-color:var(--story-edge);box-shadow:0 8px 30px color-mix(in srgb,var(--theme-shadow) 15%,transparent),inset 0 0 22px color-mix(in srgb,var(--story-ornament) 5%,transparent); }
+:root[data-theme]:not([data-theme="classic"]) .pg-story-page:before { border-color:color-mix(in srgb,var(--story-ornament) 46%,transparent); }
+:root[data-theme]:not([data-theme="classic"]) .pg-story-page:after { border-color:color-mix(in srgb,var(--story-ornament) 20%,transparent); }
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-ornament,.pg-story-kicker,.pg-story-symbol,.pg-story-divider,.pg-story-end,.pg-story-feather,.pg-story-symbol-motif,.pg-story-pending,.pg-story-invitation) { color:var(--story-ornament); }
+:root[data-theme]:not([data-theme="classic"]) .pg-story-prose:first-letter { color:var(--story-ornament); }
+:root[data-theme]:not([data-theme="classic"]) .pg-story-divider:before,
+:root[data-theme]:not([data-theme="classic"]) .pg-story-divider:after { background:color-mix(in srgb,var(--story-ornament) 40%,transparent); }
+:root[data-theme]:not([data-theme="classic"]) .pg-output>.pg-reading-button { background:var(--story-paper);color:var(--story-ornament); }
+:root[data-theme]:not([data-theme="classic"]) .pg-output .pg-imagination-thread { color:var(--story-ornament); }
+:root[data-theme]:not([data-theme="classic"]) .pg-output .pg-story-prose { scrollbar-color:var(--story-edge) transparent; }
+:root[data-theme]:not([data-theme="classic"]) .playground .pg-story-editor textarea { color:var(--story-ink);background:var(--story-paper);border-color:var(--story-edge); }
+
+/* Audit corrections: retain clear focus/hover cues and intended shape resets. */
+:root[data-theme]:not([data-theme="classic"]) .brand-icon { background:none;border:0; }
+:root[data-theme]:not([data-theme="classic"]) :is(.privacy-dot,.nav-active-dot) { background:var(--theme-accent);border-radius:50%; }
+:root[data-theme]:not([data-theme="classic"]) .search-box:focus-within { border-color:var(--theme-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--theme-accent) 15%,transparent); }
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-space-toolbar button,.pg-board-menu button,.pg-board-menu summary):hover { background:var(--theme-selected); }
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-node,.pg-node:hover,.pg-node.selected) { background:transparent;border:0;border-radius:0;box-shadow:none; }
+:root[data-theme]:not([data-theme="classic"]) :is(button,input,select,textarea,summary,a):focus-visible { outline:2px solid var(--theme-accent);outline-offset:3px; }
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-floating-library,.pg-inspector) { scrollbar-color:var(--theme-muted) transparent; }
+:root[data-theme]:not([data-theme="classic"]) .playground .pg-story-title { color:var(--story-ink); }
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-story-flourish,.pg-story-symbol-more) { color:var(--story-ornament); }
+:root[data-theme]:not([data-theme="classic"]) .pg-story-symbols:before,
+:root[data-theme]:not([data-theme="classic"]) .pg-story-symbols:after { background:color-mix(in srgb,var(--story-ornament) 35%,transparent); }
+:root[data-theme]:not([data-theme="classic"]) .pg-reader .pg-stale { color:var(--theme-secondary-text); }
+:root[data-theme]:not([data-theme="classic"]) .pg-board { color-scheme:inherit; }
+:root[data-theme]:not([data-theme="classic"]) :is(.image-dialog,.video-dialog) { color-scheme:inherit; }
+:root[data-theme]:not([data-theme="classic"]) .playground :is(.pg-output,.pg-results,.pg-reader) .pg-hint { color:var(--theme-muted); }
+/* Preserve the filled primary action when the more specific desk hover rule runs. */
+:root[data-theme]:not([data-theme="classic"]) .pg-create-column .pg-generate:not(:disabled) { background:var(--theme-accent);color:var(--theme-on-accent);border-color:var(--theme-accent); }
+:root[data-theme]:not([data-theme="classic"]) .pg-create-column .pg-generate:hover:not(:disabled) { background:color-mix(in srgb,var(--theme-accent) 92%,var(--theme-on-accent));color:var(--theme-on-accent); }
+:root[data-theme]:not([data-theme="classic"]) .pg-story-symbol-motif .pg-story-symbol-more { color:var(--story-ornament); }
+/* Device-controlled switches remain legible; the disabled semantic is retained. */
+.preferences .motion-toggle:disabled { opacity:1; }
+:root[data-theme]:not([data-theme="classic"]) :is(input,textarea,select,.image-toolbar button,.favorite-button,.pg-summary-trigger,.pg-reading-button) { border-color:var(--theme-control-line); }
+:root[data-theme]:not([data-theme="classic"]) .pg-edges line { stroke:var(--theme-accent); }
+:root[data-theme]:not([data-theme="classic"]) .pg-edges marker path { fill:var(--theme-accent); }
+:root[data-theme]:not([data-theme="classic"]) :is(.theme-picker select,.language-picker select,.search-box,.playground .pg-format select) { border-color:var(--theme-control-line); }
+:root[data-theme]:not([data-theme="classic"]) :is(.pg-story-prose,.pg-board):focus-visible,
+:is(.motion-toggle,.pg-header-toggle,.pg-reader-header button):focus-visible { outline:2px solid var(--theme-accent,#c5a0ff);outline-offset:3px; }
+:root[data-theme]:not([data-theme="classic"]) ::-webkit-scrollbar-thumb { background:var(--theme-control-line);border-radius:999px; }
+:is(.pg-floating-library,.pg-inspector,.pg-palette)::-webkit-scrollbar-track { margin-block:var(--theme-radius,14px); }
+@media(max-width:720px) {
+  :root[data-theme]:not([data-theme="classic"]) .sidebar { border-right:0; }
+  :root[data-theme]:not([data-theme="classic"]) .preferences { border:0; }
+}
