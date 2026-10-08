@@ -258,13 +258,16 @@ class Manager:
         self.require_maintenance()
         if transaction["phase"] == "committed":
             # Traffic might already have reopened. Never restore a stale DB here.
-            self.start(self.state["current"])
             try:
+                self.start(self.state["current"])
                 self.health(self.state["current"])
             except DeploymentError:
                 self.state["paused"] = True
                 self.save()
                 raise DeploymentError("Committed deployment is unhealthy; maintenance remains active. Manual recovery is required.")
+            # The original save may have failed partway through. Re-establish
+            # durable committed state BEFORE reopening, even in this branch.
+            self.save()
             self.maintenance(False)
             del self.state["transaction"]
             self.save()
@@ -279,6 +282,10 @@ class Manager:
         if previous:
             self.start(previous)
             self.health(previous)
+            self.state["current"] = previous
+            self.state["blocked"] = transaction["candidate"]["image"]
+            transaction["phase"] = "committed"
+            self.save()  # Recovery itself must also commit BEFORE traffic opens.
             self.maintenance(False)
         self.state["blocked"] = transaction["candidate"]["image"]
         self.state.pop("transaction")

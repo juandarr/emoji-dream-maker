@@ -216,6 +216,49 @@ class RecoveryTests(unittest.TestCase):
         self.assertTrue(restarted.flag.exists())
         self.assertEqual(restarted.state["transaction"]["phase"], "committed")
 
+    def test_power_loss_after_rollback_reopens_never_rewinds_new_writes(self):
+        self.manager.bad_health.add(NEW["revision"])
+        self.manager.crash_open = True
+        with self.assertRaises(PowerLoss):
+            self.manager.deploy(NEW)
+        restarted = Harness(self.root)
+        self.assertEqual(restarted.state["transaction"]["phase"], "committed")
+        self.assertEqual(restarted.state["current"], OLD)
+        restarted.recover()
+        self.assertEqual(read(self.db), "new user write after reopen")
+        self.assertFalse(restarted.flag.exists())
+
+    def test_failed_commit_save_keeps_maintenance_until_durable_state_can_be_written(self):
+        save = self.manager.save
+        def failing_commit():
+            if self.manager.state.get("transaction", {}).get("phase") == "committed":
+                raise OSError("state disk write failed")
+            save()
+        with patch.object(self.manager, "save", side_effect=failing_commit), self.assertRaises(OSError):
+            self.manager.deploy(NEW)
+        self.assertTrue(self.manager.flag.exists())
+        restarted = Harness(self.root)
+        self.assertEqual(restarted.state["transaction"]["phase"], "migrating")
+        restarted.recover()
+        self.assertEqual(read(self.db), "existing accounts and creations")
+        self.assertEqual(restarted.state["current"], OLD)
+
+    def test_recovery_retries_a_transient_commit_save_before_reopening(self):
+        save = self.manager.save
+        failed = False
+        def fail_once():
+            nonlocal failed
+            if self.manager.state.get("transaction", {}).get("phase") == "committed" and not failed:
+                failed = True
+                raise OSError("transient fsync failure")
+            save()
+        with patch.object(self.manager, "save", side_effect=fail_once), self.assertRaises(OSError):
+            self.manager.deploy(NEW)
+        restarted = Harness(self.root)
+        self.assertEqual(restarted.state["current"], NEW)
+        self.assertNotIn("transaction", restarted.state)
+        self.assertFalse(restarted.flag.exists())
+
     def test_initial_failure_preserves_import_and_keeps_maintenance(self):
         self.manager.state = {}
         self.manager.save()
