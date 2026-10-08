@@ -1,5 +1,6 @@
 import { savedBoard, restoreBoard } from "./helpers/playground-workspace";
-import {expect,test,type Page,type Locator} from "@playwright/test";
+import { test, expect } from "./helpers/account";
+import {type Page,type Locator} from "@playwright/test";
 const fixture={schemaVersion:1,title:"Transform practice",intent:"",interpretation:"",nodes:[
   {id:"octopus",emojiId:"1F419",glyph:"🐙",label:"Octopus",meaning:"Octopus",note:"",role:"subject",x:20,y:35},
   {id:"bear",emojiId:"1F9F8",glyph:"🧸",label:"Bear",meaning:"Bear",note:"",role:"subject",x:45,y:35},

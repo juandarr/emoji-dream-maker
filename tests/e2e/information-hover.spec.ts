@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { test, expect } from "./helpers/account";
+import { type Locator, type Page } from "@playwright/test";
 
 async function openPlayground(page: Page) {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -66,8 +67,8 @@ test("both information icons have identical hover styling in every palette and v
   }
 });
 
-test("touch taps do not leave information popups open", async ({ browser }) => {
-  const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+test("touch taps do not leave information popups open", async ({ browser, page: source }) => {
+  const context = await browser.newContext({ storageState: await source.context().storageState(), hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
   try {
     const page = await context.newPage();
     await openPlayground(page);

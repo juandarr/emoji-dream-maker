@@ -7,16 +7,17 @@ import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, getClientRect, 
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { AnimatePresence } from "motion/react";
 import dynamic from "next/dynamic";
-import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Compass, FolderHeart, Grid2X2, Heart, History, List, Moon, Shapes, Orbit, Search, Shuffle, Trash2, X } from "lucide-react";
+import { LogOut, ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Compass, FolderHeart, Grid2X2, Heart, History, List, Moon, Shapes, Orbit, Search, Shuffle, Trash2, X } from "lucide-react";
 import { catalog, defaultTopic, categories, constellationPositions, emojiById, searchCatalog } from "@/lib/catalog";
 import type { ConstellationPosition } from "@/lib/catalog";
 import { messages } from "@/lib/i18n";
 import { dragAccessibility } from "@/lib/drag-accessibility";
 import { playgroundLabels } from "@/features/playground/labels";
 import { creationLabels } from "@/features/playground/creation-labels";
-import { browserCreationRepository } from "@/features/playground/creation-repository";
+import { useAccount } from "@/features/account/AccountWorkspace";
+import { CREATIONS_CHANGED } from "@/features/playground/creation-repository";
 import { groupCreations } from "@/features/playground/creations";
-import { discoveryKey, initialPreferences, readPreferences, remember, savePreferences } from "@/lib/storage";
+import { discoveryKey, remember } from "@/lib/storage";
 import type { Preferences } from "@/lib/storage";
 import { isTheme, themes, themeLabels } from "@/lib/themes";
 import type { Discovery, EmojiRecord, Locale, TopicCandidate } from "@/lib/types";
@@ -46,10 +47,9 @@ const stars=Array.from({length:65},(_,i)=>({left:`${(i*37+13)%100}%`,top:`${(i*6
 // their measured rectangles rather than treating them as drag transforms.
 const dragMeasuring={draggable:{measure:getClientRect},droppable:{measure:getClientRect}};
 
-export default function Explorer() {
-  const [prefs,setPrefs]=useState<Preferences>(initialPreferences);
-  const [ready,setReady]=useState(false);
-  const [storageFailed,setStorageFailed]=useNotification(false);
+export default function Explorer({accountStatus}:{accountStatus?:React.ReactNode}) {
+  const account=useAccount(),prefs=account.preferences,setPrefs=account.setPreferences;
+  const ready=true;
   const [notice,setNotice]=useNotification<""|"maxFavorites">("");
   const [cleared,setCleared]=useNotification<{tab:"favorites"|"history";items:Discovery[]}|null>(null);
   const [query,setQuery]=useState("");
@@ -60,8 +60,8 @@ export default function Explorer() {
   const [pageSize,setPageSize]=useState(48);
   const [tab,setTab]=useState<"discover"|"favorites"|"history"|"playground"|"creations">("discover");
   const [playgroundSeed,setPlaygroundSeed]=useState<{id:string;emoji:EmojiRecord;glyph:string}|null>(null);
-  const [creationCount,setCreationCount]=useState<number|null>(null);
-  useEffect(()=>{let alive=true;void browserCreationRepository().list("saved").then(rows=>{if(alive)setCreationCount(groupCreations(rows).length);}).catch(()=>{});return()=>{alive=false;};},[]);
+  const [creationCount,setCreationCount]=useState<number|null>(account.initialSavedCount);
+  useEffect(()=>{let alive=true;const refresh=()=>void account.repository.list("saved").then(rows=>{if(alive)setCreationCount(groupCreations(rows).length);}).catch(()=>{});const change=(event:Event)=>{if((event as CustomEvent).detail===account.identity.id)refresh();};const channel=typeof BroadcastChannel!=="undefined"?new BroadcastChannel(CREATIONS_CHANGED):null;if(channel)channel.onmessage=event=>{if(event.data===account.identity.id)refresh();};window.addEventListener(CREATIONS_CHANGED,change);window.addEventListener("focus",refresh);return()=>{alive=false;channel?.close();window.removeEventListener(CREATIONS_CHANGED,change);window.removeEventListener("focus",refresh);};},[account.repository,account.identity.id]);
   const [playgroundOpened,setPlaygroundOpened]=useState(false);
   const [selected,setSelected]=useState<EmojiRecord|null>(null);
   const [variant,setVariant]=useState<string|null>(null);
@@ -73,8 +73,7 @@ export default function Explorer() {
   const reduced=!!systemReduced||prefs.reduced;
   const locale=prefs.locale,t=messages[locale];
   const sensors=useSensors(useSensor(PointerSensor,{activationConstraint:{distance:6}}),useSensor(KeyboardSensor));
-  useEffect(()=>{try{setPrefs(readPreferences(window.localStorage));}catch{setStorageFailed(true);}setReady(true);},[]);
-  useEffect(()=>{if(ready){try{setStorageFailed(!savePreferences(window.localStorage,prefs));}catch{setStorageFailed(true);}}document.documentElement.lang=prefs.locale;},[prefs,ready]);
+  useEffect(()=>{document.documentElement.lang=prefs.locale;},[prefs.locale]);
   useEffect(()=>{if(ready)document.documentElement.dataset.theme=prefs.theme;},[prefs.theme,ready]);
   useEffect(()=>{const media=window.matchMedia("(prefers-reduced-motion: reduce)");const update=()=>setSystemReduced(media.matches);update();media.addEventListener("change",update);return()=>media.removeEventListener("change",update);},[]);
   useEffect(()=>{let current=48;const update=()=>{const next=window.innerWidth<=360?18:window.innerWidth<=720?24:48;if(next!==current){current=next;setPageSize(next);setPage(0);}};update();window.addEventListener("resize",update);return()=>window.removeEventListener("resize",update);},[]);
@@ -128,7 +127,10 @@ export default function Explorer() {
     <div className={`app-shell ${reduced?"reduced":""}`} inert={!!gallery}>
       <a className="skip-link" href="#main-content">{t.skip}</a>
       <aside className="sidebar">
+        <div className="sidebar-intro">
         <a className="brand" href="/" aria-label="Dream Maker"><span className="brand-icon"><img src="/icon.svg" width={40} height={40} alt=""/></span><span>dream<span className="brand-light">maker</span></span></a>
+          <p className="sidebar-greeting"><span className="greeting-hello">{locale==="es"?"Hola":"Hello"} <span aria-hidden="true">✦</span></span>{" "}<strong className="greeting-name">{account.identity.name}<span className="greeting-comma">,</span></strong>{" "}<span className="greeting-prompt">{locale==="es"?<>¿Qué vas a <em>imaginar</em> hoy?</>:<>what will you <em>imagine</em> today?</>}</span></p>
+        </div>
         <div className="sidebar-body"><nav aria-label={t.navigation}>
           <div className="discovery-menu">
             <button aria-current={tab==="discover"?"page":undefined} title={t.discover} className={`nav-discover ${tab==="discover"?"active":""} ${tab==="favorites"||tab==="history"?"in-section":""}`} onClick={()=>setTab("discover")}><Compass size={19}/>{t.discover}<ChevronDown className="nav-group-chevron" size={14}/><span className="nav-active-dot"/></button>
@@ -140,11 +142,11 @@ export default function Explorer() {
           <div className="playground-menu"><button aria-current={tab==="playground"?"page":undefined} title={playgroundLabels[locale].name} className={`nav-playground ${tab==="playground"?"active":""} ${tab==="creations"?"in-section":""}`} onClick={()=>{setPlaygroundOpened(true);setTab("playground");}}><Shapes size={19}/>{playgroundLabels[locale].name}<span className="nav-active-dot"/></button><div className="discovery-subnav" role="group" aria-label={playgroundLabels[locale].name}><button aria-current={tab==="creations"?"page":undefined} className={`nav-creations ${tab==="creations"?"active":""}`} onClick={()=>{setPlaygroundOpened(true);setTab("creations");}}><FolderHeart size={19}/>{creationLabels[locale].name}{creationCount!==null&&<span className="nav-count">{creationCount}</span>}</button></div></div>
         </nav>
         </div>
-        <div className="preferences"><label className="language-picker"><span>{t.locale}</span><select aria-label={t.locale} disabled={!ready} value={locale} onChange={e=>setPrefs(p=>({...p,locale:e.target.value as Locale}))}><option value="en" lang="en">English</option><option value="es" lang="es">Español</option></select></label><label className="theme-picker"><span>{themeLabels[locale].label}</span><select aria-label={themeLabels[locale].label} disabled={!ready} value={prefs.theme} onChange={e=>{const theme=e.target.value;if(isTheme(theme))setPrefs(p=>({...p,theme}));}}>{themes.map(theme=><option key={theme} value={theme}>{themeLabels[locale][theme]}</option>)}</select></label><button className="motion-toggle" disabled={systemReduced} title={systemReduced?t.systemReduced:undefined} aria-describedby={systemReduced?"system-motion-note":undefined} aria-pressed={reduced} onClick={()=>setPrefs(p=>({...p,reduced:!p.reduced}))}><Moon size={14}/>{t.reduced}<span className={`toggle ${reduced?"on":""}`}/></button><p><span className="privacy-dot"/>{t.local}</p>{systemReduced&&<span id="system-motion-note" className="visually-hidden">{t.systemReduced}</span>}</div>
+        <div className="preferences"><label className="language-picker"><span>{t.locale}</span><select aria-label={t.locale} disabled={!ready} value={locale} onChange={e=>setPrefs(p=>({...p,locale:e.target.value as Locale}))}><option value="en" lang="en">English</option><option value="es" lang="es">Español</option></select></label><label className="theme-picker"><span>{themeLabels[locale].label}</span><select aria-label={themeLabels[locale].label} disabled={!ready} value={prefs.theme} onChange={e=>{const theme=e.target.value;if(isTheme(theme))setPrefs(p=>({...p,theme}));}}>{themes.map(theme=><option key={theme} value={theme}>{themeLabels[locale][theme]}</option>)}</select></label><button className="motion-toggle" disabled={systemReduced} title={systemReduced?t.systemReduced:undefined} aria-describedby={systemReduced?"system-motion-note":undefined} aria-pressed={reduced} onClick={()=>setPrefs(p=>({...p,reduced:!p.reduced}))}><Moon size={14}/>{t.reduced}<span className={`toggle ${reduced?"on":""}`}/></button><p><span className="privacy-dot"/>{locale==="es"?"Guardado en tu cuenta":"Stored on your account"}</p>{accountStatus}<button className="account-signout" onClick={account.logout}><LogOut size={15}/>{locale==="es"?"Cerrar sesión":"Sign out"}</button>{systemReduced&&<span id="system-motion-note" className="visually-hidden">{t.systemReduced}</span>}</div>
       </aside>
       <main id="main-content" tabIndex={-1} aria-labelledby="main-heading" className={`main-content section-${tab}`}>
         <section className="intro"><h1 id="main-heading" aria-live="polite" aria-atomic="true">{tab==="discover"?t.title:tab==="creations"?creationLabels[locale].title:tab==="playground"?playgroundLabels[locale].title:tab==="favorites"?t.saved:t.recent}</h1><p>{tab==="discover"?t.intro:tab==="creations"?creationLabels[locale].intro:tab==="playground"?playgroundLabels[locale].intro:tab==="favorites"?t.savedIntro:t.historyIntro}</p></section>
-        {(storageFailed||notice)&&<div role="status" className="storage-notice">{notice?t[notice]:t.storage}<button onClick={()=>{setNotice("");setStorageFailed(false);}} aria-label={t.closeNotice}><X size={14}/></button></div>}
+        {notice&&<div role="status" className="storage-notice">{t[notice]}<button onClick={()=>{setNotice("");}} aria-label={t.closeNotice}><X size={14}/></button></div>}
         {cleared&&<div className="storage-notice" role="status"><span>{cleared.tab==="favorites"?t.clearedFavorites:t.clearedHistory}</span><button onClick={undoClear}>{t.undoClear}</button><button aria-label={t.closeNotice} onClick={()=>setCleared(null)}><X size={14}/></button></div>}
         {playgroundOpened&&<div hidden={tab!=="playground"&&tab!=="creations"}><Playground locale={locale} seed={playgroundSeed} view={tab==="creations"?"creations":"editor"} onEdit={()=>setTab("playground")} onSavedCount={setCreationCount}/></div>}
         {tab==="playground"||tab==="creations"?null:tab==="discover"?<>

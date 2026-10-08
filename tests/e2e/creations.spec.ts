@@ -1,4 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { records, seedCreation } from "./helpers/account";
+import { test, expect } from "./helpers/account";
+import { type Page } from "@playwright/test";
 import AxeBuilder from '@axe-core/playwright';
 import type { Composition } from '../../src/features/playground/model';
 
@@ -19,12 +21,8 @@ async function add(page:Page) {
   await page.getByRole('button',{name:'Close emoji picker',exact:true}).click();
 }
 async function save(page:Page){await page.locator('.cr-action-buttons').getByRole('button',{name:'Save creation',exact:true}).click();await expect(page.locator('.cr-action-status')).toHaveText('Saved to Creations');}
-const keep=(page:Page)=>page.getByRole('button',{name:'Keep in session',exact:true}).click();
-async function rows(page:Page,collection='saved') {
-  return page.evaluate(collection=>new Promise<any[]>((resolve,reject)=>{
-    const r=indexedDB.open('dream-maker-playground-v1',2);r.onsuccess=()=>{const db=r.result,q=db.transaction('creations').objectStore('creations').index('membership').getAll(['local',collection]);q.onsuccess=()=>{db.close();resolve(q.result);};q.onerror=()=>reject(q.error);};r.onerror=()=>reject(r.error);
-  }),collection);
-}
+async function keep(page:Page){const button=page.getByRole('button',{name:'Keep in session',exact:true});await button.click();await expect(button).toBeEnabled();}
+const rows=records;
 async function generate(page:Page,index:number) {
   await page.getByRole('button',{name:'Generate',exact:true}).click();
   await expect(page.locator('.pg-output .pg-story-title')).toHaveText(`Experiment ${index}`);
@@ -101,15 +99,13 @@ test('cancel unblocks replacements immediately and ignores late completion witho
   await page.reload();await page.getByRole('button',{name:'Playground',exact:true}).click();await expect(page.locator('.cr-checkpoint')).toHaveCount(0);
 });
 
-test('legacy attempts migrate once without a retention cap and saved views remain accessible in every theme and Spanish',async({page})=>{
+test('account history has no retention cap and saved views remain accessible in every theme and Spanish',async({page})=>{
   const board:Composition={schemaVersion:1,title:'Legacy experiment',intent:'',interpretation:'',edges:[],nodes:[{id:'heart',emojiId:'2764',glyph:'❤️',label:'red heart',meaning:'Love',role:'subject',note:'',x:45,y:45,scale:1,rotation:0}]};
   const settings={kind:'poem',locale:'en',tone:'gentle',model:'test/text'};
   const legacy=Array.from({length:24},(_,i)=>({id:`legacy-${i}`,createdAt:Date.now()-i*1000,identity:'legacy-input',brief:{interpretation:'Love'},board,settings,status:i<2?'failed':'succeeded',...(i<2?{}:{result:{title:`Legacy ${i}`,text:`Result ${i}`,model:'test/text',provider:'openrouter'}})}));
-  await page.addInitScript(async({board,legacy})=>{
-    if(sessionStorage.getItem('legacy-seeded'))return;sessionStorage.setItem('legacy-seeded','1');
-    await new Promise<void>((resolve,reject)=>{const r=indexedDB.open('dream-maker-playground-v1',1);r.onupgradeneeded=()=>r.result.createObjectStore('workspace');r.onsuccess=()=>{const db=r.result,tx=db.transaction('workspace','readwrite');tx.objectStore('workspace').put({board,runs:legacy},'active');tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>reject(tx.error);};});
-  },{board,legacy});
-  await open(page);await expect.poll(async()=>(await rows(page,'temporary')).length).toBe(24);await expect(page.locator('.cr-checkpoint')).toHaveCount(15);await page.getByRole('button',{name:'Show more (9)',exact:true}).click();await expect(page.locator('.cr-checkpoint')).toHaveCount(24);
+  await open(page);
+  for(const run of legacy)await seedCreation(page,{schemaVersion:1,id:crypto.randomUUID(),createdAt:run.createdAt,board,settings:settings as any,run:run as any});
+  await expect.poll(async()=>(await rows(page,'temporary')).length).toBe(24);await expect(page.locator('.cr-checkpoint')).toHaveCount(15);await page.getByRole('button',{name:'Show more (9)',exact:true}).click();await expect(page.locator('.cr-checkpoint')).toHaveCount(24);
   await page.locator('.cr-checkpoint').filter({hasText:'Legacy 2'}).first().getByRole('button',{name:'Save creation',exact:true}).click();await page.getByRole('button',{name:/^Creations/}).click();
   for(const theme of ['classic','cyberpunk','solarpunk','retro']) {
     await page.getByLabel('Themes',{exact:true}).selectOption(theme);await expect(page.locator('html')).toHaveAttribute('data-theme',theme);
@@ -140,4 +136,54 @@ test('restored unavailable models stay visible and require an explicit choice be
   await page.reload();await page.getByRole('button',{name:/^Creations/}).click();await page.locator('.cr-tree-branch').getByRole('button',{name:'Interpretation test/other',exact:true}).click();await page.locator('.cr-library-detail').getByRole('button',{name:'Restore state',exact:true}).click();
   await expect(page.getByRole('button',{name:'Generate',exact:true})).toBeDisabled();await expect(page.locator('.pg-header-issue')).toContainText('Saved model unavailable');
   await page.getByRole('button',{name:'Settings',exact:true}).click();await expect(page.getByLabel('Text model',{exact:true})).toHaveValue('test/other');await page.getByLabel('Text model',{exact:true}).selectOption('test/text');await generate(page,1);
+});
+
+
+test('conflicting result drafts can be explicitly reapplied against the latest revision',async({page,context})=>{
+  await open(page);await add(page);await generate(page,1);
+  const other=await context.newPage();await open(other);await other.locator('.cr-checkpoint').getByRole('button',{name:'Restore state',exact:true}).click();
+  const edit=async(target:Page,text:string)=>{const output=target.locator('.pg-output');await output.getByRole('button',{name:'Edit output',exact:true}).click();await output.getByLabel('Edit output',{exact:true}).fill(text);await output.getByRole('button',{name:'Done editing',exact:true}).click();};
+  await edit(page,'Another tab version');await expect.poll(async()=>(await rows(page,'temporary'))[0].state.run.result.text).toBe('Another tab version');
+  await edit(other,'My retained draft');await expect(other.locator('.playground .account-save-status')).toContainText('Another tab changed this creation');
+  await other.locator('.playground .account-save-status').getByRole('button',{name:'Reapply my changes'}).click();
+  await expect.poll(async()=>(await rows(page,'temporary'))[0].state.run.result.text).toBe('My retained draft');
+  await expect(other.locator('.playground .account-save-status')).toHaveCount(0);expect(await rows(page,'temporary')).toHaveLength(1);await other.close();
+});
+
+test('generation persistence retry and subsequent Save never resubmit the provider',async({page})=>{
+  await open(page);await add(page);let submissions=0,retries=0;
+  await page.route('**/api/generations',async route=>{
+    const method=route.request().method();
+    if(method==='POST'){submissions++;return route.fulfill({status:503,json:{persistencePending:true,code:'persistence',result:{title:'Retained result',text:'Retained output',model:'test/text',provider:'openrouter'}}});}
+    if(method==='PATCH'){retries++;return route.fulfill(retries===1?{status:503,json:{code:'storage'}}:{json:{status:200}});}
+    return route.fallback();
+  });
+  await page.getByRole('button',{name:'Generate',exact:true}).click();await expect(page.locator('.pg-story-title')).toHaveText('Retained result');
+  await expect(page.getByRole('button',{name:'Generate',exact:true})).toBeDisabled();
+  await page.locator('.account-save-status').getByRole('button',{name:'Retry'}).click();await expect.poll(()=>retries).toBe(1);
+  await expect(page.locator('.pg-story-prose')).toHaveText('Retained output');
+  await save(page);expect(retries).toBe(2);expect(submissions).toBe(1);expect((await rows(page))[0].state.run.result.text).toBe('Retained output');
+  await expect(page.getByRole('button',{name:'Generate',exact:true})).toBeEnabled();
+});
+
+
+test('the Creations badge synchronizes from another tab before the Playground is opened',async({page,context})=>{
+  await page.goto('/');await expect(page.locator('.nav-creations .nav-count')).toHaveText('0');
+  const other=await context.newPage();await open(other);await add(other);await save(other);
+  await expect(page.locator('.nav-creations .nav-count')).toHaveText('1');await other.close();
+});
+
+
+test('restoring an older edited checkpoint and reapplying a conflict updates only that version',async({page})=>{
+  await open(page);await add(page);await generate(page,1);const original=(await rows(page,'temporary'))[0];
+  const second=structuredClone(original.state);second.id=crypto.randomUUID();second.run.result.text='Second version';
+  expect((await page.request.put('/api/account/creations',{headers:{origin:new URL(page.url()).origin},data:{collection:'temporary',state:second}})).ok()).toBe(true);
+  await page.reload();await page.getByRole('button',{name:'Playground',exact:true}).click();
+  await page.locator(`[data-state-id="${original.state.id}"]`).getByRole('button',{name:'Restore state',exact:true}).click();
+  const remote=structuredClone(original.state);remote.run.result.text='Remote first version';
+  expect((await page.request.put('/api/account/creations',{headers:{origin:new URL(page.url()).origin},data:{collection:'temporary',state:remote,revision:original.revision}})).ok()).toBe(true);
+  const output=page.locator('.pg-output');await output.getByRole('button',{name:'Edit output',exact:true}).click();await output.getByLabel('Edit output',{exact:true}).fill('Reapplied first version');await output.getByRole('button',{name:'Done editing',exact:true}).click();
+  const status=page.locator('.playground .account-save-status');await expect(status).toContainText('Another tab changed this creation');await status.getByRole('button',{name:'Reapply my changes'}).click();
+  await expect.poll(async()=>(await rows(page,'temporary')).find(row=>row.state.id===original.state.id).state.run.result.text).toBe('Reapplied first version');
+  expect((await rows(page,'temporary')).find(row=>row.state.id===second.id).state.run.result.text).toBe('Second version');
 });

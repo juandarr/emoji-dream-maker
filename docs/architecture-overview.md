@@ -1,12 +1,12 @@
 # Dream Maker: current architecture
 
-Analysis date: October 2, 2026. Explorer baseline: commit `6e4ecf5`, updated to include the first Playground MVP. This document describes the checked-out implementation. Proposed changes are in [Future improvements and playground plan](future-improvements.md).
+Updated for Phase 2 on October 8, 2026. Current verification: 252 unit tests, 156 browser checks across regression/reruns, type checking, production build, and a production SQLite restart/backup/restore. Provider/editor details retain the earlier Explorer analysis baseline; account persistence now follows the implemented [Phase 2 plan](phase-2-implementation-plan.md). This document describes the checked-out implementation. Proposed changes are in [Future improvements and playground plan](future-improvements.md).
 
 ## 1. What the system does
 
 Dream Maker is a personal English/Spanish emoji explorer. A user finds an emoji, chooses an interpretation, and opens a multimedia discovery containing Wikipedia context, museum artwork, educational videos, GIFs, and sound previews. They can correct the interpretation, follow related articles, and revisit favorites or history.
 
-The architecture is a **single Next.js application with an interactive React client and server-side provider adapters**. The Discover canvas is an animated constellation and portal for browsing. A separate Playground section stores editable emoji compositions locally in IndexedDB and offers optional OpenRouter text generation. There is no account system, shared project store or durable server job database.
+The architecture is a **single Next.js application with an interactive React client and server-side provider adapters**. The Discover canvas is an animated constellation and portal for browsing. Playground includes an account-backed Creations library and persistent temporary history, with optional OpenRouter text generation. Better Auth validates username/password sessions and invitation activation; SQLite stores preferences, Discovery state, creation snapshots, deletion metadata, and durable generation attempts. The active editor stays in React memory and starts blank on refresh.
 
 The important domain chain is:
 
@@ -21,28 +21,38 @@ flowchart LR
   subgraph Browser[Browser]
     UI[Explorer and gallery]
     PG[Playground editor]
-    BOARDS[(IndexedDB board and runs)]
-    PG <--> BOARDS
+    WORK[Account workspace and repository]
+    PG <--> WORK
     PG --> CAT
     CAT[Local bilingual catalog]
-    PREF[(localStorage preferences)]
+    PREF[Account preferences]
     VC[Video prefetch cache]
     GIF[Direct GIPHY adapter]
     PLAY[Images, audio, YouTube player]
     UI --> CAT
     UI <--> PREF
+    PREF <--> WORK
     UI --> VC
     UI --> GIF
     UI --> PLAY
   end
   subgraph Server[Next.js Node server]
+    AUTH[Better Auth and activation gate]
+    DATA[Account state and creation routes]
+    DB[(Persistent account SQLite)]
+    WORK <--> DATA
+    DATA --> AUTH
+    DATA <--> DB
     GEN[Generation route and OpenRouter adapter]
+    GEN --> AUTH
+    GEN <--> DB
     API[Resolve, discover, related routes]
     WIKI[Wikipedia adapter]
     MEDIA[Art, sound, YouTube adapters]
     CACHE[Process-local metadata caches]
     YT[yt-dlp worker or executable]
     DISK[(YouTube JSON disk cache)]
+    API --> AUTH
     API --> WIKI
     API --> MEDIA
     WIKI <--> CACHE
@@ -83,7 +93,7 @@ Versions below are installed in this checkout, not claims about the latest upstr
 | Lucide React | 0.468.0 | UI icons |
 | Vitest | 5.0.3 | Unit and integration checks |
 | Playwright | 1.63.0 | Chromium interaction tests and visual review scripts |
-| Node.js | README requires 20.19+; recommends 24 | Next.js server, streams, disk cache and child processes |
+| Node.js | README requires Node 22+; recommends 24 | Next.js server, streams, disk cache and child processes |
 | Python 3 / yt-dlp | Optional external runtime/tool | Reusable metadata search workers; executable fallback also supported |
 | CSS, SVG and Web Animations API | Browser primitives | Responsive styling, orbital motion, lensing and accretion animation |
 
@@ -117,8 +127,10 @@ flowchart TD
 | --- | --- |
 | `Explorer.tsx` | Preferences, active tab, bilingual search, selected emoji/variant, pagination, drag/drop, gallery lifecycle, favorite/history callbacks, video prefetch |
 | `features/playground/Playground.tsx` | Independent dnd-kit editor, searchable/sortable tray, selection/meaning/role/note/variant editing, explicit relationships, brief editing and generation runs; stays mounted after first opening |
-| `features/playground/model.ts` | Renderer-independent version 1 composition schema, validated imports, reducer history and pure semantic compiler; coordinates excluded from text identity |
-| `features/playground/storage.ts` | IndexedDB board/run persistence; validates recovered boards and run snapshots; interrupted runs recover as unknown |
+| `features/playground/model.ts` | Renderer-independent version 1 composition schema, validated imports, reducer history and pure semantic compiler; semantic/spatial compilation remains separate from exact creation grouping |
+| `features/account/server/*` | Authentication, ownership/activation guards, migrations, validated SQLite persistence, atomic deletion/Undo, durable attempts and cancellation |
+| `features/playground/storage.ts` | Retained browser-only legacy recovery; not used by authenticated account workspaces |
+| `features/playground/creations.ts` | Portable versioned states, exact-content tree identity, projections and component restoration |
 | `features/generation/server/openrouter.ts` | Server-only text generator contract and fixed OpenRouter chat-completions adapter, timeout, safe errors and usage metadata |
 | `Gallery.tsx` | Chosen topic, alternatives, correction search, 20-step back trail, independent provider states, request cancellation, retries and coordinated playback |
 | `WikipediaContext.tsx` | Excerpt, attribution, visible English fallback, retry countdown and separate related-topic request |
@@ -144,7 +156,7 @@ Constellation positions are derived from the current page: three lanes, category
 
 ### Playground composition and generation
 
-The whole board is one named scene. `Canvas.tsx` keeps camera, pointer gestures, selection affordances and fullscreen separate from the composition document. Catalog objects use the locally bundled Noto Color Emoji 2.051 COLRv1 font, matching the original system bitmap font’s artwork and gradients. Native font shaping preserves skin tones, flags and ZWJ sequences. The world layer changes its layout dimensions with zoom and only translates; the font renders its vector outlines at the displayed font size rather than enlarging a compositor bitmap. The font-face color-COLRv1 capability guard allows unsupported browsers to retain system emoji instead of rendering monochrome outlines. Unknown imported glyphs also retain the system-text fallback. A non-passive wheel handler zooms around the cursor; background pointer capture pans freely. Existing objects and transform handles use pointer capture with a six-pixel threshold; temporary previews update all affected nodes and relationships, and a batch reducer action commits the whole gesture once on release. Escape, pointer cancellation and lost capture discard the preview. Selected objects retain their selection throughout and after movement; their frame and controls follow the live preview. A rotated drag surface underneath the artwork moves the selection from empty space inside its frame. Canvas pointer routing picks the topmost painted glyph, passing transparent padding through to lower artwork or the canvas, while retaining keyboard focus and selection; Shift-drag still starts area selection and outside dragging retains background panning. Selection is a transient ID array; area selection converts screen coordinates through the camera and tests inclusive overlap against cached painted glyph shapes. `emoji-shape.ts` samples the same loaded font in an offscreen canvas and measures the CSS baseline to align the mask with the visible glyph. `shapes.ts` retains opaque row runs, preserving transparent corners and internal holes, and inverse-transforms pointer points and area rectangles through each instance’s rotation and scale. Pointer picking checks real artwork first, then adds a bounded Euclidean outer-edge allowance, six percent of displayed glyph size per side clamped to 2–6 screen pixels for mouse/pen or 4–10 for touch. A flood-fill identifies enclosed transparent holes so the allowance never fills them; marquee selection uses only the painted runs; separating-axis overlap with the painted runs includes edge contact. The bounded mask cache serves only hit testing, never displayed artwork, and excludes shadows, glow and frame padding; a 1/32 CSS-pixel tolerance accounts for painted edge rounding at fractional zoom. Selection frames project corners onto the first selected object’s axes, so both individual and rigid-group frames track rotation without a second persisted angle. Screen-space padding, dashed stroke width and controls stay constant through zoom; controls rotate around the frame center and remain reachable at viewport edges, with a connector from the frame to the rotation control, and corner resize uses local-axis projection. Shift-key state resets on blur/visibility changes and switches the canvas cursor to the standard arrow. A toolbar selection mode and Shift-drag preserve free panning as the default gesture. Shared-center group transforms run in world pixels so a non-square canvas preserves angles and proportions. Node scale and rotation persist with validated backward-compatible defaults in version-1 boards; visual transforms stay outside semantic identity. Group deletion removes incident relationships atomically. Dnd-kit owns tray additions. Screen drops convert through the inverse camera; the floating picker and its overlay live inside the fullscreen element. Additions keep the picker mounted and open with its search and scroll intact. A document pointer-down listener dismisses it on outside interaction, ignoring active tray drags; outside dismissal preserves the clicked control’s focus, while ×/Esc restore the toggle’s focus. Escape also closes the picker when keyboard focus is outside the canvas. A native fullscreen request falls back to a fixed viewport on unsupported hosts, with focus containment and scroll restoration. Selected glyphs glow/float (respecting both reduced-motion settings), and their delete affordance stays at screen size. Camera changes never enter undo history or semantic identity. Base catalog IDs and per-instance UUIDs are distinct. Positions are finite percentage coordinates in a world plane, allowed outside the initial 0–100 rectangle (capped at ±100,000 to keep imports finite), while glyph, meaning, role, note and explicit directed relationships supply a semantic brief. Custom interpretation text can override the readable preview without erasing structured entities. The pure reducer retains up to 50 undo entries; drag movement commits only on completion. Browser storage is independent of explorer preferences and retains the working snapshot plus the last 20 immutable generation inputs and editable outputs. Playground hydration restores the saved creation shelf while starting a blank active composition and current result. Context, relationships, canvas camera and result editing state stay mounted while hidden or across in-app tab changes; they reset on a page refresh. Imports/exports contain boards, not generation runs or credentials.
+The whole board is one named scene. `Canvas.tsx` keeps camera, pointer gestures, selection affordances and fullscreen separate from the composition document. Catalog objects use the locally bundled Noto Color Emoji 2.051 COLRv1 font, matching the original system bitmap font’s artwork and gradients. Native font shaping preserves skin tones, flags and ZWJ sequences. The world layer changes its layout dimensions with zoom and only translates; the font renders its vector outlines at the displayed font size rather than enlarging a compositor bitmap. The font-face color-COLRv1 capability guard allows unsupported browsers to retain system emoji instead of rendering monochrome outlines. Unknown imported glyphs also retain the system-text fallback. A non-passive wheel handler zooms around the cursor; background pointer capture pans freely. Existing objects and transform handles use pointer capture with a six-pixel threshold; temporary previews update all affected nodes and relationships, and a batch reducer action commits the whole gesture once on release. Escape, pointer cancellation and lost capture discard the preview. Selected objects retain their selection throughout and after movement; their frame and controls follow the live preview. A rotated drag surface underneath the artwork moves the selection from empty space inside its frame. Canvas pointer routing picks the topmost painted glyph, passing transparent padding through to lower artwork or the canvas, while retaining keyboard focus and selection; Shift-drag still starts area selection and outside dragging retains background panning. Selection is a transient ID array; area selection converts screen coordinates through the camera and tests inclusive overlap against cached painted glyph shapes. `emoji-shape.ts` samples the same loaded font in an offscreen canvas and measures the CSS baseline to align the mask with the visible glyph. `shapes.ts` retains opaque row runs, preserving transparent corners and internal holes, and inverse-transforms pointer points and area rectangles through each instance’s rotation and scale. Pointer picking checks real artwork first, then adds a bounded Euclidean outer-edge allowance, six percent of displayed glyph size per side clamped to 2–6 screen pixels for mouse/pen or 4–10 for touch. A flood-fill identifies enclosed transparent holes so the allowance never fills them; marquee selection uses only the painted runs; separating-axis overlap with the painted runs includes edge contact. The bounded mask cache serves only hit testing, never displayed artwork, and excludes shadows, glow and frame padding; a 1/32 CSS-pixel tolerance accounts for painted edge rounding at fractional zoom. Selection frames project corners onto the first selected object’s axes, so both individual and rigid-group frames track rotation without a second persisted angle. Screen-space padding, dashed stroke width and controls stay constant through zoom; controls rotate around the frame center and remain reachable at viewport edges, with a connector from the frame to the rotation control, and corner resize uses local-axis projection. Shift-key state resets on blur/visibility changes and switches the canvas cursor to the standard arrow. A toolbar selection mode and Shift-drag preserve free panning as the default gesture. Shared-center group transforms run in world pixels so a non-square canvas preserves angles and proportions. Node scale and rotation persist with validated backward-compatible defaults in version-1 boards; visual transforms stay outside semantic identity. Group deletion removes incident relationships atomically. Dnd-kit owns tray additions. Screen drops convert through the inverse camera; the floating picker and its overlay live inside the fullscreen element. Additions keep the picker mounted and open with its search and scroll intact. A document pointer-down listener dismisses it on outside interaction, ignoring active tray drags; outside dismissal preserves the clicked control’s focus, while ×/Esc restore the toggle’s focus. Escape also closes the picker when keyboard focus is outside the canvas. A native fullscreen request falls back to a fixed viewport on unsupported hosts, with focus containment and scroll restoration. Selected glyphs glow/float (respecting both reduced-motion settings), and their delete affordance stays at screen size. Camera changes never enter undo history or semantic identity. Base catalog IDs and per-instance UUIDs are distinct. Positions are finite percentage coordinates in a world plane, allowed outside the initial 0–100 rectangle (capped at ±100,000 to keep imports finite), while glyph, meaning, role, note and explicit directed relationships supply a semantic brief. Custom interpretation text can override the readable preview without erasing structured entities. The pure reducer retains up to 50 undo entries; drag movement commits only on completion. Account SQLite stores independent saved and temporary creation collections with no retention cap. Authenticated hydration loads the creation library while starting a blank active composition and current result. Context, relationships, canvas camera and result editing state stay mounted while hidden or across in-app tab changes; they reset on a page refresh. Canvas-only Save/Restore replaces the former import/export controls.
 
 Generation snapshots the current board and settings before sending. The server validates the request, enforces a configured model allowlist, deduplicates request IDs for 30 minutes in one process, and calls OpenRouter once. The adapter supports short messages, poems, stories, lyrics, image prompts and storyboards, all as text, with optional explicit reasoning effort. It records the actual model, token usage and cost when available. Changed authored meanings or relationships flag old outputs; position-only changes do not. No automatic retry, durable job store or restart reconciliation is provided. The UI checks configuration without calling the provider; key validity is established only on a deliberate generation.
 
@@ -191,13 +203,17 @@ The shell opens before results finish, and sections reveal independently. Within
 
 | Interface | Request and result | Bounds |
 | --- | --- | --- |
-| `GET /api/generations` | Server configuration status and allowed model IDs; no key | Uncached, configuration check only |
-| `POST /api/generations` | Board snapshot, settings and request UUID; returns text result/usage or safe error | 512,000-byte streamed-body limit; 80 nodes/160 relationships; configurable completion budget (default 8,192, including reasoning); provider timeout 120 s; 2 active and 6 new requests/min per process |
+| `GET /api/generations` | Account-guarded capabilities or an owned attempt checkpoint selected by request ID | Private, non-cacheable |
+| `POST /api/account/register`, `POST /api/account/activate` | Username registration adapter and invitation activation | Bounded payloads; server-owned activation and rate limits |
+| `GET/PUT /api/account/state` | Preferences, Discovery state, Playground defaults and revision | Validated payloads, 200 favorites/50 history, conflict checks |
+| `GET/PUT/DELETE /api/account/creations`, `POST /api/account/undo` | Owned versioned records and independent collection memberships | Revision checks; atomic bulk deletion and five-second Undo |
+| `DELETE/PATCH /api/generations` | Cancel owned attempt / retry failed persistence | Cancellation capability and session checks; no automatic provider resubmission |
+| `POST /api/generations` | Owned board snapshot, settings, request UUID and cancellation capability; returns an authoritative run/result or safe error | 512,000-byte streamed-body limit; 80 nodes/160 relationships; configurable completion budget (default 8,192, including reasoning); provider timeout 120 s; 2 active and 6 new requests/min per process |
 | `GET /api/resolve` | `emojiId`, `locale`, optional `q`; returns `Resolution` | Known base emoji; en/es; correction text ≤150 characters; server deadline 4.8 s, client 5 s |
 | `POST /api/discover` | `DiscoverInput`; returns one `ProviderResult` | 8,192-byte body including streamed-byte enforcement; known emoji, locale, provider, validated topic |
 | `GET /api/related` | `title`, `locale`; returns `RelatedResult` | Title ≤200 characters, no pipe separator, en/es; server 6 s, client 6.5 s |
 
-Successful API responses explicitly use `Cache-Control: no-store`. Internal caches are application-managed rather than Next.js response caching. Invalid requests return 400; oversized discovery bodies return 413. Provider failures generally return a structured result with HTTP 200, so a monitoring system must inspect `status` and `reason`, not only the HTTP status.
+Protected API responses, including errors, explicitly use `Cache-Control: private, no-store` and vary by Cookie. Missing sessions return 401; inactive accounts and rejected origins return 403. Internal caches are application-managed rather than Next.js response caching. Invalid requests return 400; oversized discovery bodies return 413. Provider failures generally return a structured result with HTTP 200, so a monitoring system must inspect `status` and `reason`, not only the HTTP status.
 
 Non-video discovery has a 7.8-second server deadline and eight-second gallery deadline. YouTube can spend eight seconds on yt-dlp and a further eight on optional API fallback, within a 17-second route deadline; browser prefetch uses 17.5 seconds and the gallery wrapper 18 seconds. These are failure ceilings, not latency targets. Other inner bounds include 2.2-second Wikipedia fetches, 5.5 seconds per sound search, 6.5 seconds for museums, and two seconds per Met object detail request.
 
@@ -279,9 +295,10 @@ Definitions: [types](../src/lib/types.ts).
 | Store | Data and identity | Lifetime and limits | Durability |
 | --- | --- | --- | --- |
 | Bundled catalog/editorial tables | Emojibase JSON, aliases, concept mappings, sound/art/GIF associations, educational channel IDs | Loaded with code; changes require a code/data update | Repository and installed packages |
-| Browser `localStorage` | JSON under `dream-maker-v1`: locale, view, reduced motion, favorites, history | 200 favorites; last 50 unique discoveries | Browser profile and origin only; no sync or backup |
-| Browser IndexedDB | `dream-maker-playground-v1`, `workspace/active`: version 1 board and generation runs | 80 emoji instances, 160 relationships, last 20 runs | Story shelf restored on refresh; active canvas/current result start fresh; explicit board JSON export/import |
-| Server submission map | Request UUID and exact input fingerprint; in-flight/resolved outcome | 30 minutes, up to 100 entries; no eviction of live entries before the deadline | Process memory only; no restart/multi-instance guarantees |
+| Account SQLite state | Validated preferences and Discovery snapshots, owner ID, revision, update time | 200 favorites; last 50 unique discoveries | Persistent server disk; available across browsers/logins |
+| Account SQLite creations | Versioned canvas/configuration/result payloads; independent saved/temporary membership, fingerprint, revision | 80 emoji instances and 160 relationships per canvas; no creation retention cap | Collections survive restart until manually deleted; editor starts blank on refresh |
+| SQLite attempts and process jobs | Owner/request UUID, immutable inputs/metadata, outcome, cancellation capability digest; live controllers in memory | Global two-provider concurrency/six requests per minute; per-account limits; no automatic retries | Durable idempotency and stored outcomes; restarted running attempts become unknown |
+| Legacy browser stores | Existing `dream-maker-v1` and `dream-maker-playground-v1` records | Left intact | Not read/imported by account workspaces |
 | React state/refs | Search, selected variant, open gallery, provider results, trail, active playback, gravity | Current component/tab lifetime; trail capped at 20 | Lost on reload |
 | Browser video cache | Complete `ProviderResult` selections keyed by locale/query/English query | One hour; 256 values; shared in-flight requests | Memory only |
 | Shared provider JSON cache | Museum, Freesound and YouTube Data API responses keyed by URL plus headers | One hour; 256 values for that cache instance | Server-process memory |
@@ -294,9 +311,11 @@ The 256-entry cap applies **per cache instance**, not to the whole application. 
 
 ```mermaid
 flowchart TD
-  BOARD[Playground board and runs] --> IDB[(Browser IndexedDB)]
-  BOARD --> EXPORT[Versioned board JSON export]
-  PREF[Preferences and discoveries] --> LS[(Browser localStorage)]
+  BOARD[Explicit creation checkpoints] --> REPO[Authenticated account repository]
+  PREF[Preferences and discoveries] --> REPO
+  REPO --> DB[(Persistent SQLite)]
+  GEN[Generation inputs and outcomes] --> DB
+  ACTIVE[Active canvas and presentation] --> STATE[React state and refs]
   EDIT[Search, variant, navigation, playback] --> STATE[React state and refs]
   VIDEO[Video request] --> BC[Browser memory cache]
   BC --> SC[Server selection memory cache]
@@ -311,9 +330,9 @@ flowchart TD
 
 `Discovery` stores the **base emoji ID, topic snapshot and timestamp**, not downloaded media or the current skin variant. Favorite/history identity is `emojiId:topicLanguage:wikiId-or-wikiTitle-or-normalizedLabel`. Revisits move to the front and deduplicate; different interpretations of the same emoji can coexist. Language differences can create separate identities for the same conceptual subject.
 
-Reads validate catalog IDs, timestamps and topic fields; malformed entries are removed, bounds are enforced, and corrupt JSON/storage exceptions fall back safely. Writes report failure through the UI. Topic labels and queries are limited to 150 characters, optional wiki titles to 200, and descriptions to 2,000; arbitrary optional topic field types cannot reach the UI unchecked.
+Server writes validate catalog IDs, timestamps and topic fields and enforce bounds. Failed reads are surfaced without substituting empty state or overwriting valid account data. Writes use revisions and report failures through the UI. Topic labels and queries are limited to 150 characters, optional wiki titles to 200, and descriptions to 2,000; arbitrary optional topic field types cannot reach the UI unchecked.
 
-Saved topics are snapshots, while media lookups are refreshed or reused from metadata caches. Favorites are therefore not a permanent capture of a gallery. A cleared browser profile loses preferences and saved discoveries. Changing host/port can also change the origin and make the same local data unavailable.
+Saved topics are snapshots, while media lookups are refreshed or reused from metadata caches. Favorites are therefore not a permanent capture of a gallery. Clearing a browser profile removes its login cookie but leaves account data on the server. The same credentials restore preferences and collections after login. Legacy browser data remains outside the account repository.
 
 `MetadataCache` shares identical in-flight work using subscriber counts. One caller leaving does not cancel another caller's request; only the last departing subscriber aborts the loader. Failures are not stored as values. Final/browser YouTube caches additionally reject incomplete selections for retention, while lower-level successful JSON/search responses can still be cached. A retry can recover a failed pool but may reuse successful lower-level candidates for an hour.
 
@@ -370,13 +389,13 @@ GIPHY's current guidance disallows custom reordering/filtering and unapproved pe
 
 The intended runtime is a local Node server bound to `127.0.0.1` for development and production startup. Wikipedia and museums require no keys; Wikimedia identification is configured by `WIKIMEDIA_USER_AGENT`. Optional variables choose YouTube mode/tool/cache paths and server-private YouTube/Freesound credentials. `NEXT_PUBLIC_GIPHY_API_KEY` is intentionally shipped to the browser.
 
-The runtime requires network access to provider APIs and media hosts. YouTube local search additionally needs an executable or Python archive. A Node/container host fits the existing subprocess/disk behavior better than an edge runtime. A static-only export would not provide these API routes. No deployment manifest, hosted database, CI workflow, authentication, general discovery admission/rate limiter or shared queue was found in the tracked project files reviewed.
+The runtime requires network access to provider APIs and media hosts. YouTube local search additionally needs an executable or Python archive. A Node/container host fits the existing subprocess/disk behavior better than an edge runtime. A static-only export would not provide these API routes. Authentication and activation are enforced in protected pages and every application API. The SQLite file lives outside the checkout; one Node process coordinates generation. There is no hosted database service, shared queue, or multi-process job coordination. See [account setup](account-setup.md) for migrations and backup/restore.
 
 Security measures already present include bounded input/output, fixed provider endpoints, topic validation, `server-only` imports, external HTTPS URL screening, museum-host allowlists, no shell interpolation for searches, and no forwarding of private provider credentials into worker environments. Global headers set `nosniff`, a strict referrer policy, and disable camera/microphone/geolocation. A content security policy is not configured. These observations describe boundaries; they are not a penetration-test result.
 
 Provider timing/status logs use structured `console.info` fields such as provider, duration, status and reason. Raw subject queries are omitted from those application logs. There is no dedicated metrics/tracing system. Bodies and outbound provider fetches are explicitly uncached at the HTTP layer; custom metadata caches handle permitted reuse.
 
-### Checks performed for this analysis
+### Historical checks for the original analysis
 
 | Check | Result |
 | --- | --- |
@@ -385,7 +404,7 @@ Provider timing/status logs use structured `console.info` fields such as provide
 | Fresh browser suite / production build | Not rerun for this documentation-only analysis |
 | Fresh live provider audit | Not performed; no credential values were inspected |
 
-The existing [v0.2.0 release snapshot](releases/v0.2.0.md) records 30 passing Chromium checks plus prior build/live-review evidence. Browser source contains 28 named `test` calls, with parameterization contributing additional cases. Tests intercept provider requests, so they establish interaction/error behavior rather than live external relevance or availability. Vitest covers search, persistence, selectors, provider boundaries, bounded streams, caches, partial recovery and subprocess/worker lifecycle.
+The existing [v0.2.0 release snapshot](releases/v0.2.0.md) records 30 passing Chromium checks plus prior build/live-review evidence. That historical browser suite had 28 named `test` calls, with parameterization contributing additional cases. Tests intercept provider requests, so they establish interaction/error behavior rather than live external relevance or availability. Vitest covers search, persistence, selectors, provider boundaries, bounded streams, caches, partial recovery and subprocess/worker lifecycle.
 
 Review scripts under `scripts/` cover public content metadata, Wikipedia, sounds, yt-dlp latency and museum-image screenshots. They require a running app and, where relevant, configured credentials/tools. Most metadata reports go to `/tmp`; the art screenshot script writes into `docs/art-review/`. Existing reports are historical evidence and sometimes describe earlier implementations. For example, `emoji-app-spec.md` still names Chicago/three works, while current code uses Cleveland/The Met/five; older image-viewer notes say 2×, while current code permits 4×. Current source takes precedence when describing behavior.
 
@@ -393,6 +412,12 @@ Review scripts under `scripts/` cover public content metadata, Wikipedia, sounds
 
 The current design suits a personal explorer: little infrastructure, clear source attribution, deterministic selection, bounded persistence, and independent provider recovery. The gallery avoids a single global loading gate; the caches share work without letting one subscriber cancel another; the visual geometry is separated from drag hit-testing.
 
-The main expansion pressure is that the domain currently represents **one selected topic at a time**. Playground now supplies repeated instances, authored meanings, labeled edges, one named scene, saved board state and text outputs. Multiple boards, ordered scenes, rendered media assets, durable jobs and cross-tab/cloud conflict handling remain future work. Other pressure points are the large stateful `Explorer`/`Gallery` components, overlapping topic/validation concerns in the storage module, broad optional media fields, process-local rate limits/caches, and the need to distinguish cache data from durable creative work.
+The main expansion pressure is that the domain currently represents **one selected topic at a time**. Playground now supplies repeated instances, authored meanings, labeled edges, one named scene, saved board state and text outputs. Creations now stores multiple exact canvas roots and their configuration/result branches; account-backed revisions handle cross-tab conflicts. Ordered scenes, rendered media assets, background job queues, and collaborative/multi-process coordination remain future work. Other pressure points are the large stateful `Explorer`/`Gallery` components, overlapping topic/validation concerns in the storage module, broad optional media fields, process-local rate limits/caches, and the need to distinguish cache data from durable creative work.
 
 The [future plan](future-improvements.md) develops those boundaries without requiring a rewrite of the existing explorer.
+
+## Phase 2 ownership and interfaces
+
+`AccountWorkspace` owns preferences, authenticated fetches, account-scoped synchronization, logout protection, and repository injection. `useCreations` reads the account repository; the existing domain helpers still project exact canvas/configuration trees and all component restoration combinations. Saved versions remain immutable; temporary result edits use optimistic revisions. Five-second notification/Undo banners and hover-only information icons remain in place.
+
+The server reserves a temporary checkpoint before any provider request and persists its terminal result independently of the browser. Explicit cancellation wins over late completion, deletion cannot resurrect membership, and an interrupted process never retries a provider automatically. Removing every stored reference scrubs output content after Undo expires; a minimal provenance digest still verifies a deliberate save of editor-held content. Authentication/data responses are private and non-cacheable; provider metadata caches do not contain account libraries.

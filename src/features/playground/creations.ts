@@ -11,7 +11,7 @@ export type CanvasSnapshot = ReturnType<typeof canvasSnapshot>;
 export type ConfigurationSnapshot = ReturnType<typeof configurationSnapshot>;
 export type ResultSnapshot = GenerationRun;
 export type Collection = "temporary" | "saved";
-export type CreationRecord = { key:string; namespace:string; collection:Collection; identity:string; revision:number; state:CreationState };
+export type CreationRecord = { key:string; namespace:string; collection:Collection; identity:string; revision:number; updatedAt?:number; state:CreationState };
 
 export function canvasSnapshot(board:Composition) {
   return board.nodes.map(n=>({emojiId:n.emojiId,glyph:n.glyph,x:n.x,y:n.y,scale:n.scale,rotation:n.rotation}));

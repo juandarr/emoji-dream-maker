@@ -29,21 +29,24 @@ Simpler text, a new mascot, refined colors, and a rounded orange accretion disk 
 
 ## Start locally
 
-Requires Node.js 20.19+ (Node 24 recommended).
+Requires Node.js 22+ (Node 24 recommended).
 
 ```sh
 npm install
 cp .env.example .env.local
+# Set the required account variables described below.
 npm run dev
 ```
 
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000). The server binds to your local computer. Wikipedia and public-domain artworks require no API keys. Use any provider keys you already have; the app remains usable with unavailable-source messages when optional sources are not connected.
+Set `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, an absolute persistent `ACCOUNT_DB_PATH`, `INVITATION_PHRASE`, and `INVITATION_EMOJI_ID` before starting. See [account setup, migrations, and backup/restore](docs/account-setup.md). Register, activate with the invitation phrase and emoji, then sign in with your username/password.
+
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000) when that is your configured origin. The server binds to your local computer. Wikipedia and public-domain artworks require no API keys. Use any provider keys you already have; the app remains usable with unavailable-source messages when optional sources are not connected.
 
 ## Choose a theme
 
 Use **Themes** directly below the language selector to choose **Classic** (the
 default), **Cyberpunk**, **Solarpunk**, or **Retro**. In Spanish the selector is
-**Temas**, with **Clasico** as the default. Your choice is saved on this device.
+**Temas**, with **Clasico** as the default. Your choice is saved on your account.
 The black hole keeps its original appearance and behavior with theme colors and
 glow; generated results, the result history grid, and the reading view retain
 their original styling. Solarpunk's tilted elliptical orbits keep emojis on the
@@ -57,7 +60,7 @@ The whole board is one named scene, limited to 80 symbols. Add explicit labeled 
 
 The current board, Context fields, relationship editor, canvas view and result editing state remain while switching tabs. **Save creation** saves exactly what is present, including a canvas alone. **Creations** groups saved states into canvas → context/model → results; inspect or restore the complete state or chosen components. Saving edited work preserves earlier saved versions. Restoring or starting a new canvas offers Save / Discard / Cancel when the current work is unsaved. Canvas export/import has been removed in favor of this flow.
 
-**Generate** and **Keep in session** create temporary checkpoints. They stay in IndexedDB across refresh until removed, without a 20-record cap. View, restore, save, remove individually, or select/remove in bulk with Undo. Removing temporary history leaves saved Creations and current work intact. Refresh starts a blank editor; both collections survive. Result-only restoration keeps its original inputs as a reference and cannot attach it to different inputs. **Cancel generation** releases the editor immediately and retains the canceled attempt, although upstream provider processing may continue. Failed saves retain the current work. Phase 1 is local browser storage, with a namespaced repository and portable state for Phase 2 accounts. See the [Phase 1 plan](docs/phase-1-creations-plan.md) and [Phase 2 plan](docs/phase-2-implementation-plan.md).
+**Generate** and **Keep in session** create temporary checkpoints. They stay on your account across refresh, logout, browser changes, and server restarts until removed, without a retention cap. View, restore, save, remove individually, or select/remove in bulk with Undo. Removing temporary history leaves saved Creations and current work intact. Refresh starts a blank editor; both collections survive. Result-only restoration keeps its original inputs as a reference and cannot attach it to different inputs. **Cancel generation** releases the editor immediately and retains the canceled attempt, although upstream provider processing may continue. Failed saves retain the current work. Phase 2 stores preferences, Discovery favorites/history, and both creation collections in SQLite behind authenticated account repositories. Existing browser data is left untouched and is not imported into new accounts. See the [Phase 1 plan](docs/phase-1-creations-plan.md) and [Phase 2 plan](docs/phase-2-implementation-plan.md).
 
 **Context** contains the scene fields and its **Add relationships** toggle. The selected-symbol editor and relationship controls expand inside that same panel. **Settings** contains output language, model and reasoning effort selectors plus their explanatory line. The adjacent information icon opens supporting details about limits, connection status and generation on pointer hover; clicks never pin it open, and leaving the icon/content, Escape, or an outside click dismisses it. Both information icons share the same hover styling.
 
@@ -156,7 +159,7 @@ Click an image for the large viewer. Browse with next/previous buttons or arrow 
 
 Searches expand selected concepts into visual associations, then check museum titles, subject tags, and descriptions. Artist-name hits, unrelated substrings, and known homonyms are filtered. Changed subjects replace the original emoji associations. Results are never filled with unrelated images just to reach five. See [selection and live verification](docs/art-review.md) for source contracts, current limitations, and screenshots.
 
-This is a personal local MVP. Live relevance varies, and empty results are honest. Public deployment, accounts, rendered media generation, and Jev-assisted search are future work. Emoji compositions and optional text generation are available in Playground. No deployment is performed by this project.
+This is a personal local MVP. Live relevance varies, and empty results are honest. Phase 2 adds local accounts and persistent experiments. Public deployment, rendered media generation, and Jev-assisted search remain future work. Emoji compositions and optional text generation are available in Playground. No deployment is performed by this project.
 
 See [the application review](docs/application-review.md) for fixes, verification, and measured local provider timings.
 

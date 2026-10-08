@@ -1,5 +1,6 @@
 import { restoreBoard } from "./helpers/playground-workspace";
-import { expect, test, type Page } from "@playwright/test";
+import { test, expect } from "./helpers/account";
+import { type Page } from "@playwright/test";
 
 const glyphs = ["🌙", "🧸", "💡", "🍓", "🚀", "🧑🏽‍🚀", "🌙"];
 const board = {

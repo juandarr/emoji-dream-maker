@@ -1,3 +1,4 @@
+import { prepareAccountDatabase, closeAccountDatabase } from "./helpers/account-database";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { emojiById } from "@/lib/catalog";
@@ -5,24 +6,25 @@ import { createNode, emptyComposition } from "@/features/playground/model";
 import { GET, POST } from "@/app/api/generations/route";
 import { GenerationError, openRouterGenerator } from "@/features/generation/server/openrouter";
 import { creationTitle, outputKinds, type GenerationRun } from "@/features/generation/model";
+vi.mock("@/features/account/server/http",async importOriginal=>({...await importOriginal<typeof import("@/features/account/server/http")>(),requireAccount:async()=>({id:"test-owner",name:"Test person",username:"test_owner",activated:true})}));
 const settings={kind:"poem" as const,locale:"en" as const,tone:"gentle",model:"test/text"};
 const board={...emptyComposition(),nodes:[createNode(emojiById.get("2764")!,"en","heart",0)]};
-function request(body:unknown,headers?:Record<string,string>){return new NextRequest("http://localhost/api/generations",{method:"POST",body:typeof body==="string"?body:JSON.stringify(body),headers});}
-beforeEach(()=>{vi.stubEnv("OPENROUTER_API_KEY","test-secret");vi.stubEnv("OPENROUTER_MODELS","test/text");vi.stubEnv("OPENROUTER_REASONING_EFFORT","default");vi.stubEnv("OPENROUTER_MAX_COMPLETION_TOKENS","8192");});
-afterEach(()=>{vi.unstubAllEnvs();vi.restoreAllMocks();vi.unstubAllGlobals();});
+function request(body:unknown,headers?:Record<string,string>){return new NextRequest("http://localhost/api/generations",{method:"POST",body:typeof body==="string"?body:JSON.stringify({...body as object,cancelToken:(body as {requestId?:string})?.requestId?`${(body as {requestId:string}).requestId}cancel-capability`:undefined}),headers:{origin:"http://localhost",...headers}});}
+beforeEach(async()=>{await prepareAccountDatabase();vi.stubEnv("OPENROUTER_API_KEY","test-secret");vi.stubEnv("OPENROUTER_MODELS","test/text");vi.stubEnv("OPENROUTER_REASONING_EFFORT","default");vi.stubEnv("OPENROUTER_MAX_COMPLETION_TOKENS","8192");});
+afterEach(()=>{closeAccountDatabase();vi.unstubAllEnvs();vi.restoreAllMocks();vi.unstubAllGlobals();});
 describe("generation endpoint",()=>{
-  it("checks the browser-facing Host when Next normalizes the internal URL",async()=>{
+  it("requires the configured app origin even if the Host header is forged",async()=>{
     const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
     const headers={host:"127.0.0.1:3001",origin:"http://127.0.0.1:3001","sec-fetch-site":"same-origin"};
     // An empty body reaches validation without submitting a provider request.
-    expect((await POST(request({},headers))).status).toBe(400);
+    expect((await POST(request({},headers))).status).toBe(403);
     expect((await POST(request({},{host:"localhost:80",origin:"http://localhost"}))).status).toBe(400);
-    for(const overrides of [{origin:"http://localhost"},{origin:"https://other.example"},{origin:"null"},{"sec-fetch-site":"cross-site"}]) {
+    for(const overrides of [{origin:"http://127.0.0.1:3001"},{origin:"https://other.example"},{origin:"null"},{"sec-fetch-site":"cross-site"}]) {
       expect((await POST(request({},{...headers,...overrides}))).status).toBe(403);
     }
     expect(fetch).not.toHaveBeenCalled();
   });
-  it("exposes capabilities without exposing credentials",async()=>{const data=await (await GET()).json();expect(data.configured).toBe(true);expect(data.models).toEqual(["test/text"]);expect(JSON.stringify(data)).not.toContain("test-secret");});
+  it("exposes capabilities without exposing credentials",async()=>{const data=await (await GET(new Request("http://localhost/api/generations"))).json();expect(data.configured).toBe(true);expect(data.models).toEqual(["test/text"]);expect(JSON.stringify(data)).not.toContain("test-secret");});
   it("rejects cross-site, invalid, oversized and unconfigured requests before sending",async()=>{
     const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
     expect((await POST(request({board,settings,requestId:crypto.randomUUID()},{origin:"https://other.example"}))).status).toBe(403);
@@ -81,7 +83,7 @@ it("explains a completion budget exhausted by reasoning without exposing the rea
 it("accepts Interpretation as a generation mode",async()=>{
   const generate=vi.spyOn(openRouterGenerator,"generate").mockResolvedValue({title:"A little connection",text:"Two symbols suggest a new beginning.",model:"test/text",provider:"openrouter"});
   const response=await POST(request({board,settings:{...settings,kind:"interpretation",locale:"es"},requestId:crypto.randomUUID()}));
-  expect(response.status).toBe(200);expect(generate).toHaveBeenCalledWith(board,expect.objectContaining({kind:"interpretation",locale:"es"}));
+  expect(response.status).toBe(200);expect(generate).toHaveBeenCalledWith(board,expect.objectContaining({kind:"interpretation",locale:"es"}),expect.any(AbortSignal));
 });
 
 it("requests a one-paragraph interpretation and a title in the selected output language in one call",async()=>{

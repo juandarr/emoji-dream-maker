@@ -1,0 +1,2 @@
+"use client";
+export default function GlobalError(){return <html lang="en"><body style={{background:"#121219",color:"#eee5f6",fontFamily:"system-ui",padding:"10vh 24px"}}><main style={{maxWidth:520,margin:"auto"}}><h1>Your workspace could not be loaded</h1><p>Your saved data has not been replaced. Check the server connection and try again.</p><p lang="es">No se pudo cargar tu espacio. Los datos guardados se conservan. Revisa la conexión e inténtalo de nuevo.</p><button onClick={()=>window.location.reload()}>Retry / Reintentar</button></main></body></html>;}

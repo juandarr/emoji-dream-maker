@@ -1,5 +1,7 @@
+import { setAccountPreferences } from "./helpers/account";
 import { restoreBoard } from "./helpers/playground-workspace";
-import { expect, test, type Page } from "@playwright/test";
+import { test, expect } from "./helpers/account";
+import { type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
 const themes = ["classic", "cyberpunk", "solarpunk", "retro"] as const;
@@ -42,15 +44,17 @@ test("themes are labeled, placed below language, localized, and saved without lo
   await expect(page.getByLabel("Temas", { exact: true })).toHaveValue("solarpunk");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "solarpunk");
   await expect(page.locator(".dream-canvas")).toHaveClass(/grid/);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("dream-maker-v1")!))).toMatchObject({ locale: "es", theme: "solarpunk", view: "grid" });
+  expect((await (await page.request.get("/api/account/state")).json()).preferences).toMatchObject({ locale: "es", theme: "solarpunk", view: "grid" });
 });
 
-test("saved themes apply before hydration and invalid stored themes fall back to Classic", async ({ page }) => {
+test("account themes apply before hydration and legacy browser themes are ignored", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("dream-maker-v1", JSON.stringify({ theme: "retro" })));
+  await setAccountPreferences(page,{theme:"retro"});
   await page.route(/\/_next\/.*\.js(?:\?|$)/, route => route.abort());
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "retro");
   await page.addInitScript(() => localStorage.setItem("dream-maker-v1", JSON.stringify({ theme: "invalid" })));
+  await setAccountPreferences(page,{theme:"classic"});
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "classic");
 });

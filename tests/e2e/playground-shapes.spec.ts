@@ -1,5 +1,6 @@
 import { restoreBoard } from "./helpers/playground-workspace";
-import {expect,test,type Page} from "@playwright/test";
+import { test, expect } from "./helpers/account";
+import {type Page} from "@playwright/test";
 const fixture={schemaVersion:1,title:"Shape practice",intent:"",interpretation:"",nodes:[
   {id:"donut",emojiId:"1F369",glyph:"🍩",label:"Doughnut",meaning:"Doughnut",note:"",role:"subject",x:35,y:45,scale:4,rotation:0},
   {id:"heart",emojiId:"2764",glyph:"❤️",label:"Heart",meaning:"Heart",note:"",role:"subject",x:70,y:60,scale:3,rotation:0}

@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
+    "better-auth": "1.7.7",
+    "better-sqlite3": "13.0.3",
     "cheerio": "^1.1.2",
     "emojibase-data": "^17.0.0",
     "lucide-react": "^0.468.0",
@@ -25,10 +27,14 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.56.0",
+    "@types/better-sqlite3": "9.6.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "typescript": "^5.9.0",
     "vitest": "^5.0.3"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true
   }
 }

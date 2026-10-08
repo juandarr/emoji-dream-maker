@@ -1,5 +1,5 @@
-import enData from "emojibase-data/en/compact.json";
-import esData from "emojibase-data/es/compact.json";
+import enData from "emojibase-data/en/compact.json" with { type: "json" };
+import esData from "emojibase-data/es/compact.json" with { type: "json" };
 import { aliases } from "./aliases";
 import { conceptFor } from "./concepts";
 import type { EmojiRecord, Locale, TopicCandidate } from "./types";

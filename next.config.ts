@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const config: NextConfig = {
   poweredByHeader: false,
+  distDir: process.env.NEXT_DIST_DIR || ".next",
+  serverExternalPackages: ["better-auth", "better-sqlite3"],
+  experimental: { cpus: 1 },
   logging: { incomingRequests: false, browserToTerminal: false },
   async headers() {
     return [{ source: "/:path*", headers: [

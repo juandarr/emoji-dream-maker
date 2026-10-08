@@ -9,3 +9,12 @@ test-results/
 .tools/
 
 .cache/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.account-data/
+.next-phase2-test/
+
+.next-e2e/
+
+.next-production-check/

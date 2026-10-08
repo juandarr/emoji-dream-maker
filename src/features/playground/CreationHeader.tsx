@@ -22,7 +22,7 @@ type Props={
   kind:OutputKind; onKind:(kind:OutputKind)=>void; outputNames:Record<OutputKind,string>;
   model:string; onModel:(model:string)=>void; reasoningEffort:ReasoningEffort; onReasoning:(effort:ReasoningEffort)=>void;
   config:GenerationConfig|null; configFailed:boolean; onCheck:()=>void;
-  busy:boolean; status:string; error?:string; onGenerate:()=>void;
+  busy:boolean; generationDisabled?:boolean; status:string; error?:string; onGenerate:()=>void;
   onFields:(patch:Partial<Pick<Composition,"title"|"intent"|"interpretation">>)=>void;
   onCopy:()=>void; onCancel:()=>void; inspector:ReactNode;
 };
@@ -61,7 +61,7 @@ export default function CreationHeader(props:Props) {
       {!error&&<span className="pg-header-status" role="status" aria-live="polite">{status}</span>}
     </div>
     <div className="pg-header-action-area">
-      <div className="pg-create-column"><div className="pg-generate-stack"><button className="primary-button pg-generate" disabled={busy||!board.nodes.length||!config?.configured||!model||!config.models.includes(model)} title={!board.nodes.length?h.empty:undefined} onClick={onGenerate}><Sparkles size={18}/>{busy?t.generating:t.generate}</button>
+      <div className="pg-create-column"><div className="pg-generate-stack"><button className="primary-button pg-generate" disabled={props.generationDisabled||busy||!board.nodes.length||!config?.configured||!model||!config.models.includes(model)} title={!board.nodes.length?h.empty:undefined} onClick={onGenerate}><Sparkles size={18}/>{busy?t.generating:t.generate}</button>
         {busy&&<div className="cr-generation-cancel"><button onClick={onCancel}>{creationLabels[locale].cancelGeneration}</button></div>}
         <HoverInformation label={summaryLabels.name} id="pg-generation-summary" className="pg-summary-wrap">
             <dl><dt>{summaryLabels.model}</dt><dd>{model||t.checking}</dd><dt>{t.reasoning}</dt><dd>{efforts[reasoningEffort]}</dd>{board.title.trim()&&<><dt>{t.scene}</dt><dd>{board.title}</dd></>}</dl>
