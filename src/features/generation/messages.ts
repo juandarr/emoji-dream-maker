@@ -3,6 +3,7 @@ import type { GenerationRun } from "./model";
 
 export const generationErrors = {
   en: {
+    canceled: "Generation canceled. Provider processing may continue; this request will not retry.",
     failed: "Generation failed. Check the connection and selected model, then try again.",
     origin: "The app address could not be verified. Reload the page and try again.",
     validation: "Choose a valid canvas, output format, language, and configured model.",
@@ -24,6 +25,7 @@ export const generationErrors = {
     interrupted: "The request was interrupted and its outcome is unknown. Check your OpenRouter activity before generating again. It will not be retried automatically.",
   },
   es: {
+    canceled: "Generación cancelada. El proveedor puede seguir procesando; esta solicitud no se reintentará.",
     failed: "No se pudo generar la creación. Comprueba la conexión y el modelo elegido e inténtalo de nuevo.",
     origin: "No se pudo verificar la dirección de la app. Recarga la página e inténtalo de nuevo.",
     validation: "Elige un lienzo válido, un formato, un idioma y un modelo configurado.",

@@ -1,4 +1,4 @@
-import { savedBoard, importSavedBoard } from "./helpers/playground-workspace";
+import { savedBoard, restoreBoard } from "./helpers/playground-workspace";
 import { expect, test, type Page } from "@playwright/test";
 import {readFileSync} from "node:fs";
 import {createRequire} from "node:module";
@@ -29,7 +29,7 @@ test("board authoring, independent meanings, relationships, undo and reload",asy
   await nodes.nth(1).focus();await nodes.nth(1).press("ArrowRight");const moved=await nodes.nth(1).getAttribute("style");
   await page.getByRole("button",{name:"Undo",exact:true}).click();expect(await nodes.nth(1).getAttribute("style")).not.toEqual(moved);
   await page.getByRole("button",{name:"Redo",exact:true}).click();expect(await nodes.nth(1).getAttribute("style")).toEqual(moved);
-  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();const snapshot=await savedBoard(page);await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(nodes).toHaveCount(0);await importSavedBoard(page,snapshot);await page.getByRole("button",{name:"Context",exact:true}).click();await page.getByRole("button",{name:"Add relationships",exact:true}).click();await expect(nodes).toHaveCount(2);await expect(nodes.nth(1)).toHaveAttribute("aria-label",/Human heart/);await expect(page.locator(".pg-relationships")).toContainText("contrasts with");
+  await expect(page.locator(".pg-save")).not.toHaveText(/Saving|Guardando/);const snapshot=await savedBoard(page);await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(nodes).toHaveCount(0);await restoreBoard(page,snapshot);await page.getByRole("button",{name:"Context",exact:true}).click();await page.getByRole("button",{name:"Add relationships",exact:true}).click();await expect(nodes).toHaveCount(2);await expect(nodes.nth(1)).toHaveAttribute("aria-label",/Human heart/);await expect(page.locator(".pg-relationships")).toContainText("contrasts with");
 });
 test("drag addition and moving are one undo step at scrolled page positions",async({page})=>{
   await open(page);await picker(page);await page.getByLabel("Search emojis in English or Spanish").fill("octopus");
@@ -57,7 +57,7 @@ test("generation uses editable input, keeps results through tab changes and mark
   await page.screenshot({path:"/tmp/playground-desktop.png",fullPage:true});
   await page.getByRole("button",{name:"Favorites",exact:false}).click();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-output .pg-story-prose")).toBeVisible();
   await page.getByLabel("Chosen meaning",{exact:true}).fill("Nighttime");await page.getByLabel("Chosen meaning",{exact:true}).press("Tab");await expect(page.getByText("This creation uses an earlier version of your ideas.")).toBeVisible();
-  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-output .pg-story-prose")).toHaveCount(0);await page.locator(".pg-history-read").click();await expect(page.locator(".pg-reader .pg-story-prose")).toHaveText("Moonlight over a quiet ocean.");
+  await expect(page.locator(".pg-save")).not.toHaveText(/Saving|Guardando/);await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-output .pg-story-prose")).toHaveCount(0);await page.locator(".pg-history-read").click();await expect(page.locator(".pg-reader .pg-story-prose")).toHaveText("Moonlight over a quiet ocean.");
 });
 test("connection and provider failures preserve the authored board",async({page})=>{
   await open(page);await add(page,"ocean","water wave");
@@ -74,15 +74,18 @@ test("phone tap flow and Spanish meanings have no horizontal overflow",async({pa
   await page.screenshot({path:"/tmp/playground-phone.png",fullPage:true});
 });
 
-test("Discover transfers the selected variant and board JSON round trips",async({page})=>{
+test("Discover transfers the selected variant and Creations restores it",async({page})=>{
   await open(page);await page.route("**/api/discover",route=>route.fulfill({json:{status:"empty",items:[]}}));
   await page.getByRole("button",{name:"Discover",exact:true}).click();await page.getByRole("textbox",{name:/Search a word/}).fill("waving hand");
   const emoji=page.getByLabel("waving hand",{exact:true});await emoji.focus();await emoji.press("Enter");await page.getByLabel("Choose a variant").selectOption("👋🏽");
   await page.getByRole("button",{name:"Add to playground",exact:true}).click();await expect(page.locator(".pg-node")).toHaveAttribute("data-glyph","👋🏽");
-  await page.locator(".pg-board-menu summary").click();const download=page.waitForEvent("download");await page.getByRole("button",{name:"Export board",exact:true}).click();const file=await download;await file.saveAs("/tmp/playground-roundtrip.json");
-  await page.getByRole("button",{name:"Reset canvas",exact:true}).click();await expect(page.locator(".pg-node")).toHaveCount(0);
-  await page.locator('input[type="file"]').setInputFiles("/tmp/playground-roundtrip.json");await expect(page.locator(".pg-node")).toHaveAttribute("data-glyph","👋🏽");
-  await page.getByRole("button",{name:"Undo",exact:true}).click();await expect(page.locator(".pg-node")).toHaveCount(0);
+  await page.getByRole("button",{name:"Save creation",exact:true}).first().click();
+  await expect(page.locator(".cr-action-status")).toContainText("Saved to Creations");
+  await page.getByRole("button",{name:"New canvas",exact:true}).click();await expect(page.locator(".pg-node")).toHaveCount(0);
+  await page.getByRole("button",{name:/^Creations/}).click();
+  await page.locator(".cr-library-detail").getByRole("button",{name:"Restore state",exact:true}).click();
+  await expect(page.locator(".pg-node")).toHaveAttribute("data-glyph","👋🏽");
+  await expect(page.getByRole("button",{name:"Undo",exact:true})).toBeDisabled();
 });
 
 test("a delayed generation completes while another tab is active",async({page})=>{
@@ -94,12 +97,18 @@ test("a delayed generation completes while another tab is active",async({page})=
   await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-output .pg-story-prose")).toHaveText("An ocean poem");
 });
 
-test("storage failure still allows authoring and corrupt imports keep the board",async({page})=>{
+test("storage failure keeps the editor and blocks Save and continue",async({page})=>{
   await page.addInitScript(()=>{Object.defineProperty(window,"indexedDB",{get:()=>{throw new Error("Unavailable");}});});
-  await open(page);await expect(page.getByText(/Your saved board could not be opened/).first()).toBeVisible();
-  await page.getByRole("button",{name:"Start fresh",exact:true}).click();await add(page,"red heart","red heart");
-  await expect(page.getByText(/Browser storage is unavailable/)).toBeVisible();await page.locator(".pg-board-menu summary").click();await expect(page.getByRole("button",{name:"Export board",exact:true})).toBeEnabled();
-  await page.locator('input[type="file"]').setInputFiles({name:"broken.json",mimeType:"application/json",buffer:Buffer.from('{"schemaVersion":99}')});await expect(page.getByText(/Could not import this board/)).toBeVisible();await expect(page.locator(".pg-node")).toHaveCount(1);
+  await open(page);await expect(page.getByText(/Could not open your creation history/).first()).toBeVisible();
+  await add(page,"red heart","red heart");
+  await page.getByRole("button",{name:"New canvas",exact:true}).click();
+  const dialog=page.getByRole("dialog",{name:"Keep your current creation?",exact:true});
+  await dialog.getByRole("button",{name:"Save and continue",exact:true}).click();
+  await expect(dialog.getByRole("alert")).toContainText("Could not save");
+  await expect(page.locator(".pg-node")).toHaveCount(1);
+  await dialog.locator(".cr-dialog-actions").getByRole("button",{name:"Cancel",exact:true}).click();
+  await expect(page.locator(".pg-node")).toHaveCount(1);
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
 });
 
 test("object clicks toggle selection; dragging stays unselected and deletes undo cleanly",async({page})=>{
@@ -202,7 +211,7 @@ test("floating picker drag uses zoomed and panned world coordinates and saves of
   await page.mouse.move(rect!.x+400,rect!.y+200);await page.mouse.down();await page.mouse.move(rect!.x+1100,rect!.y+200,{steps:8});await page.mouse.up();
   await picker(page);await page.getByRole("button",{name:"Add octopus",exact:true}).click();await expect(node).toHaveCount(2);
   const position=await node.last().evaluate(el=>({left:(el as HTMLElement).style.left,top:(el as HTMLElement).style.top}));expect(parseFloat(position.left)).toBeLessThan(0);
-  await page.getByRole("button",{name:"Exit fullscreen"}).click();await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();const snapshot=await savedBoard(page);await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(node).toHaveCount(0);await importSavedBoard(page,snapshot);await expect(node).toHaveCount(2);expect(await node.last().evaluate(el=>({left:(el as HTMLElement).style.left,top:(el as HTMLElement).style.top}))).toEqual(position);
+  await page.getByRole("button",{name:"Exit fullscreen"}).click();await expect(page.locator(".pg-save")).not.toHaveText(/Saving|Guardando/);const snapshot=await savedBoard(page);await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(node).toHaveCount(0);await restoreBoard(page,snapshot);await expect(node).toHaveCount(2);expect(await node.last().evaluate(el=>({left:(el as HTMLElement).style.left,top:(el as HTMLElement).style.top}))).toEqual(position);
   await page.locator(".pg-stage").scrollIntoViewIfNeeded();await page.getByRole("button",{name:"Fit objects in view"}).click();await expect(node.first()).toBeInViewport();await expect(node.last()).toBeInViewport();
 });
 
@@ -294,13 +303,13 @@ test("Noto vectors shape the whole catalog including flags, ZWJ and skin tones",
 });
 
 
-test("story shelf opens a focus-contained reader and preserves edits through reload",async({page})=>{
+test("temporary history opens a focus-contained preview and preserves editor edits through reload",async({page})=>{
   await open(page);await add(page,"moon","crescent moon");
   await expect(page.getByLabel("Tone",{exact:true})).toHaveCount(0);
   await page.getByRole("button",{name:"Context",exact:true}).click();
   await page.getByLabel("Scene title",{exact:true}).fill("The moon's secret");
   await page.getByRole("button",{name:"Generate",exact:true}).click();
-  const card=page.getByRole("button",{name:"Read creation: The moon's secret",exact:true});
+  const card=page.locator(".pg-history-read").filter({hasText:"The moon's secret"});
   await expect(card).toContainText("Moonlight over a quiet ocean.");
   await card.click();
   const reader=page.getByRole("dialog",{name:"The moon's secret",exact:true});
@@ -308,13 +317,14 @@ test("story shelf opens a focus-contained reader and preserves edits through rel
   await expect(reader.getByRole("button",{name:"Close reading view"})).toBeFocused();
   await page.keyboard.press("Shift+Tab");
   expect(await reader.evaluate(el=>el.contains(document.activeElement))).toBe(true);
-  await reader.getByRole("button",{name:"Edit output",exact:true}).click();
-  await reader.getByLabel("Edit output",{exact:true}).fill("A new chapter beneath the stars.");
-  await reader.getByRole("button",{name:"Done editing",exact:true}).click();
+  await expect(reader.getByRole("button",{name:"Edit output",exact:true})).toHaveCount(0);
   await page.keyboard.press("Escape");await expect(reader).toHaveCount(0);await expect(card).toBeFocused();
+  await page.locator(".pg-output").getByRole("button",{name:"Edit output",exact:true}).click();
+  await page.locator(".pg-output").getByLabel("Edit output",{exact:true}).fill("A new chapter beneath the stars.");
+  await page.locator(".pg-output").getByRole("button",{name:"Done editing",exact:true}).click();
   await expect(card).toContainText("A new chapter beneath the stars.");
   await expect(page.locator(".pg-output .pg-story-prose")).toHaveText("A new chapter beneath the stars.");
-  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();
+  await expect(page.locator(".pg-save")).not.toHaveText(/Saving|Guardando/);
   await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();
   await expect(card).toContainText("A new chapter beneath the stars.");
   await page.setViewportSize({width:390,height:844});await card.click();

@@ -547,6 +547,7 @@ test("GIF gallery shows the top three relevant animations and refreshes them for
 });
 
 test("artwork supports pointer-centered wheel zoom, maximum double-click zoom and drag panning", async ({ page }) => {
+  await page.emulateMedia({reducedMotion:"reduce"});
   await stubArt(page);await openArt(page);
   await page.getByRole("button", { name: "Expand image: Octopus study 1", exact: true }).click();
   const popup = page.locator(".image-dialog"), stage = popup.locator(".image-dialog-stage"), image = popup.locator("img");

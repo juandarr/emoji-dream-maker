@@ -1,5 +1,7 @@
 "use client";
 
+import { useNotification } from "@/hooks/use-notification";
+
 import {useEffect,useRef,useState,type ReactNode,type PointerEvent} from "react";
 import {useDroppable} from "@dnd-kit/core";
 import {Copy,Expand,Minimize,Plus,Scan,MousePointer2,MoveDiagonal2,RotateCw,Trash2,X,ZoomIn,ZoomOut} from "lucide-react";
@@ -18,9 +20,9 @@ import {emojiShape} from "./emoji-shape";
 import {paintedBounds,pointInShape,pointerEdgeTolerance,shapeIntersectsArea,type GlyphShape} from "./shapes";
 
 export type CanvasGeometry={camera:Camera;width:number;height:number};
-type Props={onUndo:()=>void;onRedo:()=>void;onReset:()=>void;notice:string;onCopyEvent:(e:React.ClipboardEvent)=>void;onPasteEvent:(e:React.ClipboardEvent)=>void;onCopy:()=>void;onPaste:()=>void;canPaste:boolean;onArrange:(direction:ArrangeDirection)=>void;resetVersion:number;board:Composition;locale:Locale;selectedIds:string[];onSelect:(ids:string[])=>void;onTransform:(nodes:BoardNode[])=>void;onRemove:(ids:string[])=>void;onAdd:()=>void;picker:ReactNode;overlay:ReactNode;toolbar:ReactNode;boardRef:React.RefObject<HTMLDivElement|null>;geometryRef:React.RefObject<CanvasGeometry>;pickerOpen:boolean;trayDragging:boolean;setPickerOpen:(value:boolean)=>void};
+type Props={onUndo:()=>void;onRedo:()=>void;onReset:()=>void;resetDisabled?:boolean;notice:string;onCopyEvent:(e:React.ClipboardEvent)=>void;onPasteEvent:(e:React.ClipboardEvent)=>void;onCopy:()=>void;onPaste:()=>void;canPaste:boolean;onArrange:(direction:ArrangeDirection)=>void;resetVersion:number;fitVersion?:number;board:Composition;locale:Locale;selectedIds:string[];onSelect:(ids:string[])=>void;onTransform:(nodes:BoardNode[])=>void;onRemove:(ids:string[])=>void;onAdd:()=>void;picker:ReactNode;overlay:ReactNode;toolbar:ReactNode;boardRef:React.RefObject<HTMLDivElement|null>;geometryRef:React.RefObject<CanvasGeometry>;pickerOpen:boolean;trayDragging:boolean;setPickerOpen:(value:boolean)=>void};
 type ObjectGesture={id:number;kind:"move"|"resize"|"rotate";start:Point;nodes:BoardNode[];preview:BoardNode[];center:Point;moved:boolean;keepSelection:boolean;lastAngle:number;angle:number;element:HTMLElement;clickId:string|null;additive:boolean;frame:SelectionFrame};
-export default function Canvas({onUndo,onRedo,onReset,notice,onCopyEvent,onPasteEvent,onCopy,onPaste,canPaste,onArrange,resetVersion,board,locale,selectedIds,onSelect,onTransform,onRemove,onAdd,picker,overlay,toolbar,boardRef,geometryRef,pickerOpen,trayDragging,setPickerOpen}:Props) {
+export default function Canvas({onUndo,onRedo,onReset,resetDisabled=false,notice,onCopyEvent,onPasteEvent,onCopy,onPaste,canPaste,onArrange,resetVersion,fitVersion=0,board,locale,selectedIds,onSelect,onTransform,onRemove,onAdd,picker,overlay,toolbar,boardRef,geometryRef,pickerOpen,trayDragging,setPickerOpen}:Props) {
   const t=playgroundLabels[locale];
   const stageRef=useRef<HTMLDivElement|null>(null),toolbarRef=useRef<HTMLDivElement|null>(null),pickerButton=useRef<HTMLButtonElement|null>(null),wasPickerOpen=useRef(false),restorePickerFocus=useRef(true);
   const [toolbarHeight,setToolbarHeight]=useState(50);
@@ -34,7 +36,7 @@ export default function Canvas({onUndo,onRedo,onReset,notice,onCopyEvent,onPaste
   function reference(value:number){referenceRef.current=value;setZoomReference(value);}
   const cameraRef=useRef(camera),sizeRef=useRef(size);
   const [fullscreen,setFullscreen]=useState(false),[panning,setPanning]=useState(false),[objectDragging,setObjectDragging]=useState(false);
-  const [layersOpen,setLayersOpen]=useState(false),[viewNotice,setViewNotice]=useState("");
+  const [layersOpen,setLayersOpen]=useState(false),[viewNotice,setViewNotice]=useNotification("");
   const fullscreenRef=useRef(false),previousFullscreen=useRef(false),embeddedView=useRef<{camera:Camera;size:{width:number;height:number};reference:number}|null>(null),fitActive=useRef(false);
   const fitRef=useRef<()=>void>(()=>{});
   fullscreenRef.current=fullscreen;
@@ -202,6 +204,7 @@ export default function Canvas({onUndo,onRedo,onReset,notice,onCopyEvent,onPaste
   // Fit can follow font loading and viewport changes, but editing must keep the
   // current camera: measuring newly added artwork must not move the drop point.
   useEffect(()=>{fitActive.current=false;},[board.nodes]);
+  useEffect(()=>{if(fitVersion)fitRef.current();},[fitVersion]);
   useEffect(()=>{if(fitActive.current)fitRef.current();},[shapes,size]);
   useEffect(()=>{if(layersOpen){const panel=stageRef.current?.querySelector<HTMLElement>(".pg-layers");(panel?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')||panel?.querySelector<HTMLButtonElement>("button"))?.focus({preventScroll:true});}},[layersOpen]);
   function closeLayers(){setLayersOpen(false);stageRef.current?.querySelector<HTMLButtonElement>('[aria-controls="pg-layers"]')?.focus();}
@@ -238,7 +241,7 @@ export default function Canvas({onUndo,onRedo,onReset,notice,onCopyEvent,onPaste
         const key=e.key.toLowerCase();
         if(key==="z"||key==="r"&&!e.shiftKey){
           e.preventDefault();finishObject(undefined,true);pan.current=null;setPanning(false);setArea(null);
-          if(key==="z"){if(e.shiftKey)onRedo();else onUndo();}else if(!e.repeat)onReset();
+          if(key==="z"){if(e.shiftKey)onRedo();else onUndo();}else if(!e.repeat&&!resetDisabled)onReset();
           return;
         }
       }

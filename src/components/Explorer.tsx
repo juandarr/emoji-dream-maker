@@ -1,16 +1,21 @@
 "use client";
 
+import { useNotification } from "@/hooks/use-notification";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, getClientRect, pointerWithin, rectIntersection, useDraggable, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import { AnimatePresence } from "motion/react";
 import dynamic from "next/dynamic";
-import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Compass, Grid2X2, Heart, History, List, Moon, Shapes, Orbit, Search, Shuffle, Trash2, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Compass, FolderHeart, Grid2X2, Heart, History, List, Moon, Shapes, Orbit, Search, Shuffle, Trash2, X } from "lucide-react";
 import { catalog, defaultTopic, categories, constellationPositions, emojiById, searchCatalog } from "@/lib/catalog";
 import type { ConstellationPosition } from "@/lib/catalog";
 import { messages } from "@/lib/i18n";
 import { dragAccessibility } from "@/lib/drag-accessibility";
 import { playgroundLabels } from "@/features/playground/labels";
+import { creationLabels } from "@/features/playground/creation-labels";
+import { browserCreationRepository } from "@/features/playground/creation-repository";
+import { groupCreations } from "@/features/playground/creations";
 import { discoveryKey, initialPreferences, readPreferences, remember, savePreferences } from "@/lib/storage";
 import type { Preferences } from "@/lib/storage";
 import { isTheme, themes, themeLabels } from "@/lib/themes";
@@ -44,17 +49,19 @@ const dragMeasuring={draggable:{measure:getClientRect},droppable:{measure:getCli
 export default function Explorer() {
   const [prefs,setPrefs]=useState<Preferences>(initialPreferences);
   const [ready,setReady]=useState(false);
-  const [storageFailed,setStorageFailed]=useState(false);
-  const [notice,setNotice]=useState<""|"maxFavorites">("");
-  const [cleared,setCleared]=useState<{tab:"favorites"|"history";items:Discovery[]}|null>(null);
+  const [storageFailed,setStorageFailed]=useNotification(false);
+  const [notice,setNotice]=useNotification<""|"maxFavorites">("");
+  const [cleared,setCleared]=useNotification<{tab:"favorites"|"history";items:Discovery[]}|null>(null);
   const [query,setQuery]=useState("");
   const [debounced,setDebounced]=useState("");
   const [group,setGroup]=useState<number|null>(null);
   const [subject,setSubject]=useState<string|null>(null);
   const [page,setPage]=useState(0);
   const [pageSize,setPageSize]=useState(48);
-  const [tab,setTab]=useState<"discover"|"favorites"|"history"|"playground">("discover");
+  const [tab,setTab]=useState<"discover"|"favorites"|"history"|"playground"|"creations">("discover");
   const [playgroundSeed,setPlaygroundSeed]=useState<{id:string;emoji:EmojiRecord;glyph:string}|null>(null);
+  const [creationCount,setCreationCount]=useState<number|null>(null);
+  useEffect(()=>{let alive=true;void browserCreationRepository().list("saved").then(rows=>{if(alive)setCreationCount(groupCreations(rows).length);}).catch(()=>{});return()=>{alive=false;};},[]);
   const [playgroundOpened,setPlaygroundOpened]=useState(false);
   const [selected,setSelected]=useState<EmojiRecord|null>(null);
   const [variant,setVariant]=useState<string|null>(null);
@@ -103,7 +110,7 @@ export default function Explorer() {
   function endDrag(event:DragEndEvent){setDragging(null);if(event.over?.id==="portal"){const emoji=emojiById.get(String(event.active.id));if(emoji){choose(emoji);open(emoji);}}}
   function surprise(){const source=matches.length?matches:catalog;const emoji=source[Math.floor(Math.random()*source.length)];choose(emoji);open(emoji);}
   useEffect(()=>{
-    const title=tab==="discover"?t.discover:tab==="playground"?playgroundLabels[locale].name:tab==="favorites"?t.favorites:t.history;
+    const title=tab==="discover"?t.discover:tab==="creations"?creationLabels[locale].name:tab==="playground"?playgroundLabels[locale].name:tab==="favorites"?t.favorites:t.history;
     document.title=`${title} · Dream Maker`;
   },[tab,locale,t]);
   function clearSaved(){
@@ -130,17 +137,17 @@ export default function Explorer() {
               <button aria-current={tab==="history"?"page":undefined} title={t.history} className={`nav-history ${tab==="history"?"active":""}`} onClick={()=>setTab("history")}><History size={19}/>{t.history}<span className="nav-count">{prefs.history.length}</span></button>
             </div>
           </div>
-          <button aria-current={tab==="playground"?"page":undefined} title={playgroundLabels[locale].name} className={`nav-playground ${tab==="playground"?"active":""}`} onClick={()=>{setPlaygroundOpened(true);setTab("playground");}}><Shapes size={19}/>{playgroundLabels[locale].name}<span className="nav-active-dot"/></button>
+          <div className="playground-menu"><button aria-current={tab==="playground"?"page":undefined} title={playgroundLabels[locale].name} className={`nav-playground ${tab==="playground"?"active":""} ${tab==="creations"?"in-section":""}`} onClick={()=>{setPlaygroundOpened(true);setTab("playground");}}><Shapes size={19}/>{playgroundLabels[locale].name}<span className="nav-active-dot"/></button><div className="discovery-subnav" role="group" aria-label={playgroundLabels[locale].name}><button aria-current={tab==="creations"?"page":undefined} className={`nav-creations ${tab==="creations"?"active":""}`} onClick={()=>{setPlaygroundOpened(true);setTab("creations");}}><FolderHeart size={19}/>{creationLabels[locale].name}{creationCount!==null&&<span className="nav-count">{creationCount}</span>}</button></div></div>
         </nav>
         </div>
         <div className="preferences"><label className="language-picker"><span>{t.locale}</span><select aria-label={t.locale} disabled={!ready} value={locale} onChange={e=>setPrefs(p=>({...p,locale:e.target.value as Locale}))}><option value="en" lang="en">English</option><option value="es" lang="es">Español</option></select></label><label className="theme-picker"><span>{themeLabels[locale].label}</span><select aria-label={themeLabels[locale].label} disabled={!ready} value={prefs.theme} onChange={e=>{const theme=e.target.value;if(isTheme(theme))setPrefs(p=>({...p,theme}));}}>{themes.map(theme=><option key={theme} value={theme}>{themeLabels[locale][theme]}</option>)}</select></label><button className="motion-toggle" disabled={systemReduced} title={systemReduced?t.systemReduced:undefined} aria-describedby={systemReduced?"system-motion-note":undefined} aria-pressed={reduced} onClick={()=>setPrefs(p=>({...p,reduced:!p.reduced}))}><Moon size={14}/>{t.reduced}<span className={`toggle ${reduced?"on":""}`}/></button><p><span className="privacy-dot"/>{t.local}</p>{systemReduced&&<span id="system-motion-note" className="visually-hidden">{t.systemReduced}</span>}</div>
       </aside>
       <main id="main-content" tabIndex={-1} aria-labelledby="main-heading" className={`main-content section-${tab}`}>
-        <section className="intro"><h1 id="main-heading" aria-live="polite" aria-atomic="true">{tab==="discover"?t.title:tab==="playground"?playgroundLabels[locale].title:tab==="favorites"?t.saved:t.recent}</h1><p>{tab==="discover"?t.intro:tab==="playground"?playgroundLabels[locale].intro:tab==="favorites"?t.savedIntro:t.historyIntro}</p></section>
-        {(storageFailed||notice)&&<div role="status" className="storage-notice">{notice?t[notice]:t.storage}{notice&&<button onClick={()=>setNotice("")} aria-label={t.closeNotice}><X size={14}/></button>}</div>}
+        <section className="intro"><h1 id="main-heading" aria-live="polite" aria-atomic="true">{tab==="discover"?t.title:tab==="creations"?creationLabels[locale].title:tab==="playground"?playgroundLabels[locale].title:tab==="favorites"?t.saved:t.recent}</h1><p>{tab==="discover"?t.intro:tab==="creations"?creationLabels[locale].intro:tab==="playground"?playgroundLabels[locale].intro:tab==="favorites"?t.savedIntro:t.historyIntro}</p></section>
+        {(storageFailed||notice)&&<div role="status" className="storage-notice">{notice?t[notice]:t.storage}<button onClick={()=>{setNotice("");setStorageFailed(false);}} aria-label={t.closeNotice}><X size={14}/></button></div>}
         {cleared&&<div className="storage-notice" role="status"><span>{cleared.tab==="favorites"?t.clearedFavorites:t.clearedHistory}</span><button onClick={undoClear}>{t.undoClear}</button><button aria-label={t.closeNotice} onClick={()=>setCleared(null)}><X size={14}/></button></div>}
-        {playgroundOpened&&<div hidden={tab!=="playground"}><Playground locale={locale} seed={playgroundSeed}/></div>}
-        {tab==="playground"?null:tab==="discover"?<>
+        {playgroundOpened&&<div hidden={tab!=="playground"&&tab!=="creations"}><Playground locale={locale} seed={playgroundSeed} view={tab==="creations"?"creations":"editor"} onEdit={()=>setTab("playground")} onSavedCount={setCreationCount}/></div>}
+        {tab==="playground"||tab==="creations"?null:tab==="discover"?<>
           <div className="search-row"><label className="search-box"><Search size={21}/><input aria-label={t.search} placeholder={t.search} value={query} onChange={e=>{setSubject(null);setQuery(e.target.value);}} maxLength={150}/>{query?<button onClick={()=>setQuery("")} aria-label={t.clearSearch}><X size={16}/></button>:<span className="search-mark">✧</span>}</label><button className="surprise-button" onClick={surprise} aria-label={t.surprise}><Shuffle size={16}/><span>{t.surprise}</span></button></div>
           <div className="category-strip" role="group" aria-label={t.all}><button aria-pressed={group===null&&!subject} className={group===null&&!subject?"active":""} onClick={()=>{setSubject(null);setGroup(null);setPage(0);}}>{t.all}</button>{categories.map(c=><button aria-pressed={group===c.id&&!subject} className={group===c.id&&!subject?"active":""} key={c.id} onClick={()=>{setSubject(null);setGroup(c.id);setPage(0);}}><span>{c.icon}</span>{c[locale]}</button>)}</div>
           <div className="explorer-workspace"><div className="canvas-column"><div className="canvas-toolbar"><span><span className="count-dot"/>{matches.length.toLocaleString(locale)} {matches.length===1?t.matchOne:t.matches}{activeSubject&&<button className="subject-indicator" onClick={()=>setSubject(null)} aria-label={`${t.clearSubject}: ${activeSubject.labels[locale]}`}>{activeSubject.icon} {activeSubject.labels[locale]} <X size={12}/></button>}</span><div className="view-switch" role="group" aria-label={t.view}>{([{value:"constellation",Icon:Orbit,label:t.constellation},{value:"grid",Icon:Grid2X2,label:t.grid},{value:"list",Icon:List,label:t.list}] as const).map(({value,Icon,label})=><button key={value} aria-label={label} title={label} aria-pressed={prefs.view===value} className={prefs.view===value?"active":""} onClick={()=>setPrefs(p=>({...p,view:value}))}><Icon size={16}/></button>)}</div></div>

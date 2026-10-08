@@ -1,3 +1,4 @@
+import { restoreBoard } from "./helpers/playground-workspace";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
@@ -58,7 +59,7 @@ async function accessible(page:Page,scope?:string,ignoreConstellationOverlap=fal
 }
 async function openWorkspace(page:Page,locale:"en"|"es"){
   const t=copy[locale];await page.getByRole("button",{name:t.workspace,exact:true}).click();
-  await page.locator('input[type="file"]').setInputFiles({name:"scene.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(board))});
+  await restoreBoard(page,board);
   await expect(page.locator(".pg-node")).toHaveCount(2);
 }
 for(const locale of ["en","es"] as const)test(`${locale}: missing page uses the saved language and returns to discovery`,async({page})=>{
@@ -128,7 +129,7 @@ for(const locale of ["en","es"] as const){
     await page.locator(".pg-reader").getByRole("button",{name:t.edit,exact:true}).click();await accessible(page,".pg-reader");
     await page.locator(".pg-reader").getByRole("button",{name:t.done,exact:true}).click();await page.keyboard.press("Escape");
     await expect(page.getByRole("button",{name:t.reader,exact:true})).toBeFocused();
-    await page.locator('input[type="file"]').setInputFiles({name:"bad.json",mimeType:"application/json",buffer:Buffer.from("{}")});
+    await page.locator(".cr-action-buttons button").first().click();
     await expect(page.getByRole("button",{name:t.closeNotice,exact:true})).toBeVisible();await page.getByRole("button",{name:t.closeNotice,exact:true}).click();
     if(locale==="es"){
       await page.getByLabel(t.language).selectOption("en");await page.getByRole("button",{name:copy.en.relationships,exact:true}).click();await page.getByRole("button",{name:copy.en.relationships,exact:true}).click();
@@ -157,7 +158,7 @@ test("failure messages switch languages and stay translated after reloading",asy
   await expect(page.locator(".pg-header-issue")).toHaveText("OpenRouter necesita créditos o un presupuesto mayor para la clave.");
   await page.getByLabel("Idioma de la interfaz").selectOption("en");await expect(page.locator(".pg-header-issue")).toHaveText("OpenRouter needs credits or a higher key budget.");
   await page.getByLabel("Interface language").selectOption("es");await page.reload();await page.getByRole("button",{name:"Espacio creativo",exact:true}).click();
-  await expect(page.locator(".pg-header-issue")).toHaveCount(0);await page.locator(".pg-history-read").click();await expect(page.locator(".pg-reader")).toContainText("OpenRouter necesita créditos o un presupuesto mayor para la clave.");
+  await expect(page.locator(".pg-header-issue")).toHaveCount(0);await page.locator(".pg-history-read").first().click();await expect(page.locator(".pg-reader")).toContainText("OpenRouter necesita créditos o un presupuesto mayor para la clave.");
 });
 test("device reduced motion has an accurate disabled preference and keyboard skip link",async({page})=>{
   await start(page,"es");await expect(page.getByRole("button",{name:"Reducir movimiento",exact:true})).toBeDisabled();

@@ -1,4 +1,4 @@
-import { savedBoard, importSavedBoard } from "./helpers/playground-workspace";
+import { savedBoard, restoreBoard } from "./helpers/playground-workspace";
 import {expect,test,type Page} from "@playwright/test";
 
 const fixture={schemaVersion:1,title:"A small scene",intent:"",interpretation:"",nodes:[
@@ -9,7 +9,7 @@ const fixture={schemaVersion:1,title:"A small scene",intent:"",interpretation:""
 async function open(page:Page){
  await page.route("**/api/generations",r=>r.fulfill({json:{configured:true,models:["test/text"],maxOutputTokens:800}}));
  await page.goto('/');await page.getByRole('button',{name:'Playground',exact:true}).click();
- await page.locator('input[type="file"]').setInputFiles({name:'scene.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(fixture))});
+ await restoreBoard(page,fixture);
  await expect(page.locator('.pg-node')).toHaveCount(3);await expect(page.locator('.pg-board')).toHaveAttribute('data-shapes-ready','true');
  await page.emulateMedia({reducedMotion:'reduce'});await page.locator('.pg-stage').scrollIntoViewIfNeeded();
 }
@@ -27,11 +27,11 @@ test('canvas Undo, Redo and Reset shortcuts preserve native text editing and pre
  await open(page);let navigations=0;page.on('framenavigated',frame=>{if(frame===page.mainFrame())navigations++;});
  const original=await positions(page),moon=page.locator('[data-id="moon"]');await moon.focus();await moon.press('ArrowRight');const moved=await positions(page);expect(moved).not.toEqual(original);
  await page.keyboard.press('Control+z');expect(await positions(page)).toEqual(original);await page.keyboard.press('Control+Shift+z');expect(await positions(page)).toEqual(moved);
- await page.getByRole('button',{name:'Zoom in',exact:true}).click();await page.locator('.pg-board').focus();await page.keyboard.press('Control+r');await expect(page.locator('.pg-node')).toHaveCount(0);await expect(page.getByLabel('Canvas zoom')).toHaveText('100%');expect(navigations).toBe(0);
- await page.keyboard.press('Control+z');await expect(page.locator('.pg-node')).toHaveCount(3);expect(await positions(page)).toEqual(moved);await page.keyboard.press('Meta+z');expect(await positions(page)).toEqual(original);await page.keyboard.press('Meta+Shift+z');expect(await positions(page)).toEqual(moved);
+ await page.keyboard.press('Meta+z');expect(await positions(page)).toEqual(original);await page.keyboard.press('Meta+Shift+z');expect(await positions(page)).toEqual(moved);
  await page.getByRole('button',{name:'Context',exact:true}).click();const title=page.getByLabel('Scene title',{exact:true});await expect(title).toBeVisible();await title.focus();await title.press('End');await title.pressSequentially(' native');await title.press('Control+z');await expect(page.locator('.pg-node')).toHaveCount(3);expect(await positions(page)).toEqual(moved);
  await page.getByRole('button',{name:'Open emoji picker',exact:true}).click();const search=page.getByLabel('Search emojis in English or Spanish');await search.pressSequentially('moon');await search.press('Control+z');expect(await positions(page)).toEqual(moved);
  const intercepted=await search.evaluate(el=>{const event=new KeyboardEvent('keydown',{key:'r',ctrlKey:true,bubbles:true,cancelable:true});el.dispatchEvent(event);return event.defaultPrevented;});expect(intercepted).toBe(false);expect(navigations).toBe(0);
+ await page.getByRole('button',{name:'Close emoji picker',exact:true}).click();await page.locator('.pg-board').focus();await page.keyboard.press('Control+r');await page.getByRole('button',{name:'Discard and continue',exact:true}).click();await expect(page.locator('.pg-node')).toHaveCount(0);await expect(page.getByLabel('Canvas zoom')).toHaveText('100%');await expect(page.getByRole('button',{name:'Undo',exact:true})).toBeDisabled();expect(navigations).toBe(0);
 });
 
 test('paste centers an emoji or rotated group at the cursor after pan and zoom; off-canvas uses fallback',async({page,context})=>{
@@ -59,7 +59,7 @@ test('icon toolbar has descriptive hover and focus tooltips, overlapping Arrange
  await open(page);const toolbar=page.locator('.pg-space-toolbar');expect((await toolbar.innerText()).replace(/\s+/g,' ').trim()).toBe('Add emoji 3/80 100%');
  await expect(page.locator('.pg-arrange summary .lucide-bring-to-front')).toHaveCount(1);await expect(page.locator('.pg-edit-tools')).toHaveCSS('gap','12px');await expect(page.locator('.pg-view-tools')).toHaveCSS('gap','12px');
  await page.getByRole('button',{name:'Undo',exact:true}).hover();await expect(page.getByRole('tooltip')).toContainText('Undo the last canvas change');await expect(page.getByRole('tooltip')).toContainText('Ctrl+Z');
- await page.mouse.move(0,0);await page.getByRole('button',{name:'Undo',exact:true}).focus();await page.keyboard.press('Tab');await expect(page.getByRole('tooltip')).toContainText('Ctrl+R');
+ await page.mouse.move(0,0);await page.keyboard.press('Tab');await page.getByRole('button',{name:'Reset canvas',exact:true}).focus();await expect(page.getByRole('tooltip')).toContainText('Ctrl+R');
  await page.locator('.pg-arrange summary').click();await expect(page.getByRole('tooltip')).toHaveCount(0);await expect(page.getByRole('button',{name:'Bring to front',exact:true})).toBeVisible();
  await page.locator('.pg-arrange summary').press('Escape');await page.getByRole('button',{name:'Enter fullscreen',exact:true}).click();await page.getByRole('button',{name:'Copy selected objects',exact:true}).hover();await expect(page.getByRole('tooltip')).toContainText('Ctrl+C');await expect(page.locator('.pg-stage .pg-toolbar-tooltip')).toHaveCount(1);
  await page.getByRole('button',{name:'Exit fullscreen',exact:true}).click();await page.mouse.move(0,0);await toolbar.screenshot({path:'/tmp/playground-icon-toolbar-desktop.png'});
@@ -90,7 +90,7 @@ test('Layers selects hidden objects; Arrange changes persisted overlap order and
  await page.locator('.pg-arrange summary').click();await page.getByRole('button',{name:'Bring to front',exact:true}).click();
  expect((await positions(page)).map(n=>n.id)).toEqual(['planet','rocket','moon']);await expect(page.locator('[data-id="moon"]')).toHaveCSS('z-index','3');
  await page.getByRole('button',{name:'Undo',exact:true}).click();expect((await positions(page)).map(n=>n.id)).toEqual(['moon','planet','rocket']);
- await page.getByRole('button',{name:'Redo',exact:true}).click();await expect(page.getByText('Saved on this device',{exact:true})).toBeVisible();const snapshot=await savedBoard(page);await page.reload();await page.getByRole('button',{name:'Playground',exact:true}).click();await expect(page.locator('.pg-node')).toHaveCount(0);await importSavedBoard(page,snapshot);
+ await page.getByRole('button',{name:'Redo',exact:true}).click();await expect(page.locator(".pg-save")).not.toHaveText(/Saving|Guardando/);const snapshot=await savedBoard(page);await page.reload();await page.getByRole('button',{name:'Playground',exact:true}).click();await expect(page.locator('.pg-node')).toHaveCount(0);await restoreBoard(page,snapshot);
  await expect.poll(async()=> (await positions(page)).map(n=>n.id)).toEqual(['planet','rocket','moon']);
 });
 
@@ -130,7 +130,7 @@ test('Fit establishes 100%; zoom steps, fullscreen and repeated Fit preserve obj
 });
 
 test('Fit enlarges small objects; three dropdowns preserve search, source selection, sorting and paging',async({page})=>{
- await open(page);const before=(await page.locator('[data-id="moon"]').boundingBox())!.width;await page.getByRole('button',{name:'Fit objects in view',exact:true}).click();await expect(page.locator('.pg-canvas-notice')).toContainText('95%');await expect(page.getByLabel('Canvas zoom')).toHaveText('100%');expect((await page.locator('[data-id="moon"]').boundingBox())!.width).toBeGreaterThan(before);
+ await open(page);await page.getByRole('button',{name:'Zoom out',exact:true}).click();const before=(await page.locator('[data-id="moon"]').boundingBox())!.width;await page.getByRole('button',{name:'Fit objects in view',exact:true}).click();await expect(page.locator('.pg-canvas-notice')).toContainText('95%');await expect(page.getByLabel('Canvas zoom')).toHaveText('100%');expect((await page.locator('[data-id="moon"]').boundingBox())!.width).toBeGreaterThan(before);
  await page.getByRole('button',{name:'Open emoji picker',exact:true}).click();await expect(page.getByRole('tablist')).toHaveCount(0);
  const picker=page.locator('.pg-floating-library');await expect(picker.getByRole('combobox')).toHaveCount(3);await expect(page.getByLabel('Subjects',{exact:true}).locator('option')).toHaveCount(17);
  await page.getByLabel('Category',{exact:true}).selectOption('3');await page.getByLabel('Subjects',{exact:true}).selectOption('ocean');await expect(page.getByLabel('Category',{exact:true})).toHaveValue('all');

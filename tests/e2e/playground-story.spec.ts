@@ -1,3 +1,4 @@
+import { restoreBoard } from "./helpers/playground-workspace";
 import { expect, test, type Page } from "@playwright/test";
 
 const glyphs = ["🌙", "🧸", "💡", "🍓", "🚀", "🧑🏽‍🚀", "🌙"];
@@ -14,7 +15,7 @@ for(const locale of ["en","es"] as const)test(`${locale}: localized output title
   await page.route("**/api/generations",route=>route.fulfill({json:route.request().method()==="GET"?{configured:true,models:["test/text"]}:{result:{title,text:prose,model:"test/text",provider:"openrouter"}}}));
   await page.goto("/");if(locale==="es")await page.getByLabel("Interface language").selectOption("es");
   await page.getByRole("button",{name:locale==="es"?"Espacio creativo":"Playground",exact:true}).click();
-  await page.locator('input[type="file"]').setInputFiles({name:"scene.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify({...board,title:sourceTitle}))});
+  await restoreBoard(page,{...board,title:sourceTitle});
   const submission=page.waitForRequest(r=>r.url().endsWith("/api/generations")&&r.method()==="POST");
   await page.getByRole("button",{name:locale==="es"?"Generar":"Generate",exact:true}).click();
   expect((await submission).postDataJSON()).toMatchObject({settings:{locale},board:{title:sourceTitle}});
@@ -22,7 +23,7 @@ for(const locale of ["en","es"] as const)test(`${locale}: localized output title
   await expect(page.locator(".pg-output .pg-story-prose")).toHaveText(prose);await expect(page.locator(".pg-history-title").first()).toHaveText(title);
   await page.getByRole("button",{name:locale==="es"?"Abrir vista de lectura":"Open reading view",exact:true}).click();
   const reader=page.getByRole("dialog",{name:title,exact:true});await expect(reader.locator(".pg-story-title")).toHaveText(title);await expect(reader.locator(".pg-story-prose")).toHaveText(prose);
-  await page.keyboard.press("Escape");await expect(page.getByText(locale==="es"?"Guardado en este dispositivo":"Saved on this device",{exact:true})).toBeVisible();
+  await page.keyboard.press("Escape");await expect(page.locator(".pg-save")).not.toHaveText(/Saving|Guardando/);
   await page.reload();await page.getByRole("button",{name:locale==="es"?"Espacio creativo":"Playground",exact:true}).click();
   await expect(page.locator(".pg-output .pg-story-prose")).toHaveCount(0);await expect(page.locator(".pg-history-title").first()).toHaveText(title);await page.locator(".pg-history-read").first().click();await expect(reader.locator(".pg-story-title")).toHaveText(title);await expect(reader.locator(".pg-story-prose")).toHaveText(prose);
 });
@@ -35,7 +36,7 @@ async function open(page: Page) {
     : route.fulfill({ json: { result: { title: "The Moon’s Invitation", text, model: "test/text", provider: "openrouter" } } }));
   await page.goto("/");
   await page.getByRole("button", { name: "Playground", exact: true }).click();
-  await page.locator('input[type="file"]').setInputFiles({ name: "scene.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(board)) });
+  await restoreBoard(page,board);
   await expect(page.locator(".pg-node")).toHaveCount(glyphs.length);
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expect(page.locator(".pg-output .pg-story-prose")).toHaveText(text);
@@ -47,7 +48,7 @@ test("the result motif retains its saved canvas symbols through board changes, r
   await expect(motif.locator(".pg-vector-glyph")).toHaveText(glyphs.slice(0, 5));
   await expect(motif).toContainText("+1");
   const changed = { ...board, nodes: [{ ...board.nodes[0], glyph: "🐙", label: "Octopus" }] };
-  await page.locator('input[type="file"]').setInputFiles({ name: "new-scene.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(changed)) });
+  await restoreBoard(page,changed);
   await expect(page.locator(".pg-node")).toHaveCount(1);
   await expect(motif.locator(".pg-vector-glyph")).toHaveText(glyphs.slice(0, 5));
   await expect(page.getByText("This creation uses an earlier version of your ideas.")).toBeVisible();
@@ -56,10 +57,10 @@ test("the result motif retains its saved canvas symbols through board changes, r
   await expect(reader.locator(".pg-story-symbol-motif .pg-vector-glyph")).toHaveText(glyphs.slice(0, 5));
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Open reading view", exact: true })).toBeFocused();
-  await expect(page.getByText("Saved on this device", { exact: true })).toBeVisible();
+  await expect(page.locator(".pg-save")).not.toHaveText(/Saving|Guardando/);
   await page.reload();await page.getByRole("button", { name: "Playground", exact: true }).click();
   await expect(page.locator(".pg-output .pg-story-prose")).toHaveCount(0);
-  await page.locator(".pg-history-read").click();await expect(page.locator(".pg-reader .pg-story-symbol-motif .pg-vector-glyph")).toHaveText(glyphs.slice(0, 5));
+  await page.locator(".pg-history-read").filter({hasText:"The Moon’s Invitation"}).click();await expect(page.locator(".pg-reader .pg-story-symbol-motif .pg-vector-glyph")).toHaveText(glyphs.slice(0, 5));
 });
 
 test("local typography, decorative opening letter and reader remain usable at narrow widths", async ({ page }) => {

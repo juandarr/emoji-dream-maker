@@ -1,3 +1,4 @@
+import { restoreBoard } from "./helpers/playground-workspace";
 import {expect,test,type Page} from '@playwright/test';
 import {createRequire} from 'node:module';
 const {PNG}=createRequire(import.meta.url)('playwright-core/lib/utilsBundle') as {PNG:{sync:{read:(buffer:Buffer)=>{width:number;height:number;data:Buffer}}}};
@@ -28,7 +29,7 @@ for(const viewport of [{width:1600,height:1000},{width:390,height:844}])test(`Fi
  // no artwork, font, object placement, or camera styling is changed.
  await page.addStyleTag({content:'.pg-board{border-radius:0!important}nextjs-portal{display:none!important}'});
  for(const [glyph,rotation,multiple] of [['💮',0,false],['🌙',0,false],['🍩',45,false],['❤️',135,false],['🇯🇵',0,false],['👩🏽‍🚀',25,false],['💮',37,true]] as const){
-  await page.locator('input[type="file"]').setInputFiles({name:'fit.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(board(glyph,rotation,multiple)))});
+  await restoreBoard(page,board(glyph,rotation,multiple));
   await expect(page.locator('.pg-node').first()).toHaveAttribute('data-glyph',glyph);await expect(page.locator('.pg-board')).toHaveAttribute('data-shapes-ready','true');
   await page.locator('.pg-stage').scrollIntoViewIfNeeded();await page.getByRole('button',{name:'Fit objects in view',exact:true}).click();
   await expect(page.getByLabel('Canvas zoom')).toHaveText('100%');

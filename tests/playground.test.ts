@@ -51,9 +51,9 @@ it("restores generated titles and interpretation runs without changing the input
   expect(old.result?.text).toBe("Old poem");expect(old.result?.title).toBeUndefined();
 });
 
-it("restores up to 20 saved creations, including records beyond the old limit of 10",()=>{
+it("restores every creation without the old retention limit",()=>{
   const board=fixture();const runs=Array.from({length:21},(_,index)=>({id:`run-${index}`,identity:semanticIdentity(board,"en"),createdAt:21-index,status:"succeeded",board,settings:{kind:"poem",locale:"en",tone:"gentle",model:"test/text"},result:{text:`Poem ${index}`,provider:"openrouter",model:"test/text"}}));
-  const restored=restoreRuns(runs);expect(restored).toHaveLength(20);expect(restored[19].id).toBe("run-19");
+  const restored=restoreRuns(runs);expect(restored).toHaveLength(21);expect(restored[20].id).toBe("run-20");
 });
 
 
