@@ -45,6 +45,7 @@ class Harness(module.Manager):
         self.crash_start = False
         self.crash_open = False
         self.schema = 3
+        self.bad_gate = False
 
     def command(self, *arguments, **kwargs):
         self.events.append(arguments)
@@ -76,6 +77,12 @@ class Harness(module.Manager):
         if not self.flag.exists():
             raise AssertionError("stop must happen after maintenance closes")
         self.events.append("stop")
+
+    def require_maintenance(self):
+        if not self.flag.exists():
+            raise AssertionError("Caddy gate must be closed")
+        if self.bad_gate:
+            raise Error("Caddy configuration does not serve maintenance")
 
     def start(self, image):
         if not self.flag.exists():
@@ -138,6 +145,19 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaises(Error):
             self.manager.deploy(NEW)
         self.assertNotIn(("start", NEW["revision"]), self.manager.events)
+        self.assertEqual(read(self.db), "existing accounts and creations")
+        self.assertFalse(self.manager.flag.exists())
+
+    def test_unloaded_caddy_gate_prevents_stop_migration_and_restore(self):
+        self.manager.bad_gate = True
+        with self.assertRaises(Error):
+            self.manager.deploy(NEW)
+        self.assertEqual(self.manager.events, ["preflight"])
+        self.assertEqual(read(self.db), "existing accounts and creations")
+        self.assertEqual(Harness(self.root).state["transaction"]["phase"], "draining")
+        # Repairing the site permits journal recovery without candidate writes.
+        self.manager.bad_gate = False
+        self.manager.recover()
         self.assertEqual(read(self.db), "existing accounts and creations")
         self.assertFalse(self.manager.flag.exists())
 
@@ -306,6 +326,25 @@ class RecoveryTests(unittest.TestCase):
         finally:
             os.umask(previous)
         self.assertEqual(self.manager.flag.stat().st_mode & 0o777, 0o644)
+
+    def test_live_gate_requires_exact_response_and_validates_domain_over_loopback(self):
+        with patch.object(module.http.client, "HTTPSConnection") as constructor, patch.object(module.socket, "create_connection") as connect, patch.object(module.ssl, "create_default_context") as context:
+            response = constructor.return_value.getresponse.return_value
+            response.status = 503
+            response.getheader.return_value = "60"
+            response.read.return_value = module.MAINTENANCE_MESSAGE.encode()
+            module.Manager.require_maintenance(self.manager)
+            connect.assert_called_once_with(("127.0.0.1", 443), timeout=5)
+            context.return_value.wrap_socket.assert_called_once_with(connect.return_value, server_hostname="dreammaker.hexloop.cc")
+            constructor.return_value.close.assert_called_once()
+            # A backend's own generic 503 is not proof the Caddy matcher is active.
+            response.read.return_value = b'{"ok":false}'
+            with self.assertRaises(Error):
+                module.Manager.require_maintenance(self.manager)
+
+    def test_unreachable_caddy_blocks_gate_check(self):
+        with patch.object(module.socket, "create_connection", side_effect=OSError("connection refused")), self.assertRaises(Error):
+            module.Manager.require_maintenance(self.manager)
 
 
 if __name__ == "__main__":

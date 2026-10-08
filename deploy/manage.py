@@ -9,14 +9,20 @@ import argparse
 import contextlib
 import datetime as dt
 import fcntl
+import http.client
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import time
+from urllib.parse import urlsplit
+
+MAINTENANCE_MESSAGE = "Dream Maker is updating. Please try again shortly."
 
 
 class DeploymentError(RuntimeError):
@@ -79,6 +85,31 @@ class Manager:
         else:
             self.flag.unlink(missing_ok=True)
             sync_directory(self.flag.parent)
+
+    def require_maintenance(self):
+        """Verify the live Caddy site, including TLS/SNI, over host loopback.
+
+        Checking the flag alone cannot catch a removed/unloaded Caddy matcher.
+        Loopback avoids depending on router hairpin NAT or public DNS routing.
+        """
+        origin = urlsplit(self.config.get("origin", "https://dreammaker.hexloop.cc"))
+        if origin.scheme != "https" or not origin.hostname or origin.username or origin.password or origin.path not in ("", "/") or origin.query or origin.fragment:
+            raise DeploymentError("Deployment origin must be a public HTTPS origin")
+        connection = http.client.HTTPSConnection(origin.hostname, origin.port or 443, timeout=5)
+        try:
+            connection.sock = ssl.create_default_context().wrap_socket(
+                socket.create_connection(("127.0.0.1", origin.port or 443), timeout=5),
+                server_hostname=origin.hostname,
+            )
+            connection.request("GET", "/api/health", headers={"Host": origin.netloc})
+            response = connection.getresponse()
+            body = response.read(1024).decode("utf8", errors="replace").strip()
+            if response.status != 503 or response.getheader("Retry-After") != "60" or body != MAINTENANCE_MESSAGE:
+                raise DeploymentError("Caddy is not serving the configured maintenance gate; no database restore/migration is permitted")
+        except (OSError, http.client.HTTPException) as error:
+            raise DeploymentError("Cannot verify the Caddy maintenance gate over local HTTPS; check Caddy configuration and certificate") from error
+        finally:
+            connection.close()
 
     def command(self, *arguments, timeout=600):
         try:
@@ -222,6 +253,7 @@ class Manager:
         if not transaction:
             return
         self.maintenance(True)
+        self.require_maintenance()
         if transaction["phase"] == "committed":
             # Traffic might already have reopened. Never restore a stale DB here.
             self.start(self.state["current"])
@@ -266,6 +298,7 @@ class Manager:
         self.save()
         self.maintenance(True)
         try:
+            self.require_maintenance()
             self.stop()
             backup = self.snapshot(previous or candidate, self.backup_path("predeploy", previous or candidate))
             transaction.update(phase="migrating", backup=backup.name)
@@ -358,7 +391,7 @@ def install(root):
     # Caddy must be able to traverse these directories regardless of sudo umask.
     root.chmod(0o755)
     (root / "control").chmod(0o755)
-    config = {"repository": "ghcr.io/juandarr/emoji-dream-maker", "data_dir": "/var/lib/dreammaker/accounts", "cache_dir": "/var/cache/dreammaker/youtube", "backup_dir": "/var/backups/dreammaker"}
+    config = {"repository": "ghcr.io/juandarr/emoji-dream-maker", "origin": "https://dreammaker.hexloop.cc", "data_dir": "/var/lib/dreammaker/accounts", "cache_dir": "/var/cache/dreammaker/youtube", "backup_dir": "/var/backups/dreammaker"}
     config_path = root / "deployment.json"
     if config_path.exists():
         config = json.loads(config_path.read_text())

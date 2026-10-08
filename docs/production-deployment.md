@@ -165,7 +165,7 @@ sudo systemctl reload caddy
 curl -i https://dreammaker.hexloop.cc/api/health
 ```
 
-During installation this should return **503** and the maintenance message. Test from outside the LAN too; hairpin NAT/DNS can differ inside. Confirm that removing spoofable forwarded-IP headers works with the direct router connection. Existing requests may finish after the maintenance flag closes; stopping the app allows a 150-second graceful drain, then the final backup is taken. The cloned preflight runs before maintenance to shorten the interruption.
+During installation this should return **503** and the maintenance message. Test from outside the LAN too; hairpin NAT/DNS can differ inside. Confirm that removing spoofable forwarded-IP headers works with the direct router connection. The controller also verifies that Caddy actually serves the exact 503 maintenance response over loopback HTTPS with this hostname's valid certificate before stopping the app or restoring/migrating the database. A missing/unloaded matcher blocks the update; repair Caddy and retry journal recovery. Caddy must listen on loopback as well as the public interface. Existing requests may finish after the maintenance flag closes; stopping the app allows a 150-second graceful drain, then the final backup is taken. The cloned preflight runs before maintenance to shorten the interruption.
 
 ## 6. First deployment and acceptance
 
