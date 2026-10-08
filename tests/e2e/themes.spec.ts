@@ -1,3 +1,4 @@
+import { restoreBoard } from "./helpers/playground-workspace";
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
@@ -117,11 +118,11 @@ test("theme changes preserve black hole geometry, reading typography and history
   for (const theme of themes) { await page.getByLabel("Themes", { exact: true }).selectOption(theme); expect(await geometry()).toEqual(originalGeometry); }
   await page.getByLabel("Themes", { exact: true }).selectOption("classic");
   await page.getByRole("button", { name: "Playground", exact: true }).click();
-  await page.locator('input[type="file"]').setInputFiles({ name: "scene.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(board)) });
+  await restoreBoard(page,board);
   await page.getByRole("button", { name: "Generate", exact: true }).click();
   await expect(page.locator(".pg-output .pg-story-prose")).toContainText("At the edge of the sea");
   await page.evaluate(() => document.fonts.ready);
-  const styles = () => page.evaluate(() => Object.fromEntries([".pg-output .pg-story-page", ".pg-output .pg-story-title", ".pg-output .pg-story-prose", ".pg-output .pg-story-actions button", ".pg-results .pg-result-list", ".pg-results .pg-history-card", ".pg-results .pg-history-title", ".pg-results .pg-history-footer"].map(selector => {
+  const styles = () => page.evaluate(() => Object.fromEntries([".pg-output .pg-story-page", ".pg-output .pg-story-title", ".pg-output .pg-story-prose", ".pg-output .pg-story-actions button", ".cr-temporary", ".cr-temporary .pg-history-card", ".cr-temporary .pg-history-title", ".cr-checkpoint-actions"].map(selector => {
     const style = getComputedStyle(document.querySelector(selector)!);
     return [selector, Object.fromEntries(["fontFamily", "fontSize", "fontWeight", "lineHeight", "padding", "margin", "display", "gridTemplateColumns", "gap"].map(property => [property, style.getPropertyValue(property.replace(/[A-Z]/g, c => "-" + c.toLowerCase()))]))];
   })));
@@ -203,22 +204,22 @@ test("themed story surfaces and reader remain accessible with long content and c
   await fixtures(page);
   await page.route("**/api/generations", route => route.fulfill({ json: route.request().method() === "GET" ? { configured: true, models: ["test/text"] } : { result: { title: "Morning by the sea", text: "Morning light glimmers across the water. ".repeat(140), model: "test/text", provider: "openrouter" } } }));
   await page.getByRole("button", { name: "Playground", exact: true }).click();
-  await page.locator('input[type="file"]').setInputFiles({ name: "scene.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(board)) });
+  await restoreBoard(page,board);
   await page.getByRole("button", { name: "Generate", exact: true }).click();
-  await expect(page.locator(".pg-history-card")).toHaveCount(1);
+  await expect(page.locator(".pg-history-card")).toHaveCount(2);
   for (const theme of themes) {
     await page.getByLabel("Themes", { exact: true }).selectOption(theme);
     for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(viewport);
       await expect(page.locator(".motion-toggle")).toBeVisible();
       await expect(page.locator(".pg-output")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-      await expect(page.locator(".pg-results")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(page.locator(".cr-temporary")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       if (viewport.width === 1440) {
         await page.getByRole("button", { name: "Generate", exact: true }).hover();
         const shelfReport = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).exclude("nextjs-portal").analyze();
         expect(shelfReport.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => ({ target: n.target, summary: n.failureSummary })) })), `${theme}, shelf and hovered primary action`).toEqual([]);
       }
-      await page.locator(".pg-history-read").click();
+      await page.locator(".pg-history-read").first().click();
       const reader = page.locator(".pg-reader");
       await expect(reader).toBeVisible();
       await reader.getByRole("button", { name: "Close reading view", exact: true }).focus();
@@ -235,7 +236,7 @@ test("themed story surfaces and reader remain accessible with long content and c
       const report = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).exclude("nextjs-portal").analyze();
       expect(report.violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => ({ target: n.target, summary: n.failureSummary })) })), `${theme}, reader ${viewport.width}`).toEqual([]);
       await page.keyboard.press("Escape");
-      await expect(page.locator(".pg-history-read")).toBeFocused();
+      await expect(page.locator(".pg-history-read").first()).toBeFocused();
     }
   }
 });
@@ -273,7 +274,7 @@ test("canvas artwork retains its size after phone, desktop and fullscreen round 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await fixtures(page);
   await page.getByRole("button", { name: "Playground", exact: true }).click();
-  await page.locator('input[type="file"]').setInputFiles({ name: "scene.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(board)) });
+  await restoreBoard(page,board);
   const glyphSize = () => page.locator(".pg-node>span").first().evaluate(el => parseFloat(getComputedStyle(el).fontSize));
   const initial = await glyphSize();
   for (const theme of themes) {

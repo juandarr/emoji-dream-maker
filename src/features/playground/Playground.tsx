@@ -1,12 +1,18 @@
 "use client";
 
+import { useNotification } from "@/hooks/use-notification";
+
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { Copy, Feather, Plus, Redo2, RotateCcw, Trash2, Undo2, X } from "lucide-react";
+import { Bookmark, BookmarkCheck, Copy, Feather, History, Plus, Redo2, RotateCcw, SlidersHorizontal, Trash2, Undo2, X } from "lucide-react";
 import { emojiById } from "@/lib/catalog";
 import type { EmojiRecord, Locale } from "@/lib/types";
-import { boardReducer, clamp, compileBrief, createNode, emptyComposition, NODE_LIMIT, parseComposition, semanticIdentity, type BoardNode } from "./model";
-import { loadWorkspace, saveWorkspace, SAVED_RUN_LIMIT, type Workspace } from "./storage";
+import { boardReducer, clamp, compileBrief, createNode, emptyComposition, NODE_LIMIT, semanticIdentity, type BoardNode } from "./model";
+import { CreationConflict } from "./creation-repository";
+import { useCreations } from "./use-creations";
+import { canSaveState, containsWork, groupCreations, isStateSaved, makeState, resultMatches, restoreState, saveableState, type Collection, type CreationRecord, type CreationState, type RestoreParts } from "./creations";
+import { creationLabels } from "./creation-labels";
+import { CreationDetail, CreationDialog, SavedCreations, TemporaryCreations } from "./CreationHistory";
 import { playgroundLabels } from "./labels";
 import { nodeLabel, nodeMeaning } from "./localization";
 import { generationErrorMessage } from "@/features/generation/messages";
@@ -20,7 +26,7 @@ import {copySelection,readSelection,pasteSelection,type SelectionClipboard} from
 import {selectionBounds} from "./transforms";
 import { creationTitle, type ReasoningEffort, type GenerationRun, type GenerationSettings, type OutputKind } from "@/features/generation/model";
 
-import { ReadingButton, StoryContent, StoryModal, StoryPage, StoryShelf, StorySymbols, storyLabels } from "./StoryResults";
+import { ReadingButton, StoryContent, StoryModal, StoryPage, StorySymbols, storyLabels } from "./StoryResults";
 import "./playground-story.css";
 import "./playground-editor.css";
 import CreationHeader, { type GenerationConfig } from "./CreationHeader";
@@ -32,53 +38,56 @@ function MeaningField({value,onCommit,label}:{value:string;onCommit:(v:string)=>
   useEffect(()=>setDraft(value),[value]);
   return <label>{label}<input aria-label={label} value={draft} maxLength={150} onChange={e=>setDraft(e.target.value)} onBlur={()=>{const next=draft.trim()||value;setDraft(next);if(next!==value)onCommit(next);}} onKeyDown={e=>{if(e.key==="Enter")e.currentTarget.blur();}}/></label>;
 }
-function download(value:unknown,name:string) {
-  const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:"application/json"}));
-  const link=document.createElement("a");link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-}
-export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null}) {
-  const t=playgroundLabels[locale], s=storyLabels[locale];
-  const [readingId,setReadingId]=useState<string|null>(null);
-  const [activeRunId,setActiveRunId]=useState<string|null>(null),[resetVersion,setResetVersion]=useState(0);
-  const [deletedRun,setDeletedRun]=useState<{run:GenerationRun;wasActive:boolean}|null>(null);
+export default function Playground({locale,seed,view="editor",onEdit,onSavedCount}:{locale:Locale;seed:Seed|null;view?:"editor"|"creations";onEdit?:()=>void;onSavedCount?:(count:number)=>void}) {
+  const t=playgroundLabels[locale], s=storyLabels[locale], c=creationLabels[locale];
+  const data=useCreations();const {ready}=data;
+  const dataRef=useRef(data);dataRef.current=data;
+  const [readNotice,setReadNotice]=useNotification(false),[generationNotice,setGenerationNotice]=useNotification(false);
+  useEffect(()=>{setReadNotice(data.error);},[data.error,setReadNotice]);
+  const [readingRun,setReadingRun]=useState<GenerationRun|null>(null),[activeRun,setActiveRun]=useState<GenerationRun|null>(null),[resetVersion,setResetVersion]=useState(0),[fitVersion,setFitVersion]=useState(0);
+  const [preview,setPreview]=useState<CreationState|null>(null),[pendingReplacement,setPendingReplacement]=useState<(()=>void)|null>(null),[replacementFailed,setReplacementFailed]=useState(false);
+  const [pendingRemoval,setPendingRemoval]=useState<{collection:Collection;records:CreationRecord[]}|null>(null),[removalError,setRemovalError]=useState(""),[deleted,setDeleted]=useNotification<{collection:Collection;records:CreationRecord[]}|null>(null);
+  const [configurationChosen,setConfigurationChosen]=useState(false);const configurationEdited=useRef(false);
+  const activeCheckpoint=useRef<CreationRecord|null>(null),editTimer=useRef<ReturnType<typeof setTimeout>|null>(null),editVersion=useRef(0);
+  const [editingPending,setEditingPending]=useState(false);
+  type Job={run:GenerationRun;token:string;controller:AbortController;row?:CreationRecord;canceled:boolean;finished:boolean};
+  const jobRef=useRef<Job|null>(null);
   const [history,dispatch]=useReducer(boardReducer,{past:[],present:emptyComposition(),future:[]});
   const board=history.present;
-  const [ready,setReady]=useState(false),[readFailed,setReadFailed]=useState(false),[saveStatus,setSaveStatus]=useState<"saved"|"saving"|"failed">("saved");
   const [selectedIds,setSelectedIds]=useState<string[]>([]);
   const [pickerState,setPickerState]=useState(initialPickerState);
-  const [target,setTarget]=useState(""),[relation,setRelation]=useState(""),[dragging,setDragging]=useState<string|null>(null),[notice,setNotice]=useState("");
-  const [runs,setRuns]=useState<GenerationRun[]>([]),[busy,setBusy]=useState(false),[config,setConfig]=useState<GenerationConfig|null>(null),[configFailed,setConfigFailed]=useState(false);
+  const [target,setTarget]=useState(""),[relation,setRelation]=useState(""),[dragging,setDragging]=useState<string|null>(null),[notice,setNotice]=useNotification("");
+  const [busy,setBusy]=useState(false),[config,setConfig]=useState<GenerationConfig|null>(null),[configFailed,setConfigFailed]=useState(false);
   const [reasoningEffort,setReasoningEffort]=useState<ReasoningEffort>("default"),[pendingResultId,setPendingResultId]=useState<string|null>(null);
+  useEffect(()=>{setGenerationNotice(busy);},[busy,setGenerationNotice]);
   const [pickerOpen,setPickerOpen]=useState(false);
   const clipboardRef=useRef<SelectionClipboard|null>(null),pasteCount=useRef(0),cursorRef=useRef<Point|null>(null),dragPointRef=useRef<Point|null>(null);
-  const [canPaste,setCanPaste]=useState(false),[canvasNotice,setCanvasNotice]=useState("");
+  const [canPaste,setCanPaste]=useState(false),[canvasNotice,setCanvasNotice]=useNotification("");
   const latestBoard=useRef(board);latestBoard.current=board;
   const geometryRef=useRef<CanvasGeometry>({camera:{x:0,y:0,zoom:1},width:600,height:500});
   const resultsRef=useRef<HTMLElement|null>(null);
   const [kind,setKind]=useState<OutputKind>("interpretation"),[model,setModel]=useState("");
-  const boardRef=useRef<HTMLDivElement|null>(null),fileRef=useRef<HTMLInputElement|null>(null),consumedSeed=useRef(""),saveQueue=useRef<Promise<void>>(Promise.resolve()),saveVersion=useRef(0),busyRef=useRef(false);
+  const [outputLocale,setOutputLocale]=useState<Locale>(locale),[tone,setTone]=useState(t.toneDefault);
+  const boardRef=useRef<HTMLDivElement|null>(null),consumedSeed=useRef(""),busyRef=useRef(false);
   const sensors=useSensors(useSensor(MouseSensor,{activationConstraint:{distance:6}}),useSensor(TouchSensor,{activationConstraint:{delay:200,tolerance:8}}),useSensor(KeyboardSensor));
-  const persist=useCallback((workspace:Workspace)=>{
-    const version=++saveVersion.current;setSaveStatus("saving");
-    const save=saveQueue.current.catch(()=>{}).then(()=>saveWorkspace(workspace));
-    saveQueue.current=save;
-    void save.then(()=>{if(version===saveVersion.current)setSaveStatus("saved");},()=>{if(version===saveVersion.current)setSaveStatus("failed");});
-    return save;
-  },[]);
-  useEffect(()=>{let alive=true;void loadWorkspace().then(saved=>{if(alive&&saved){// A refresh begins a new composition; saved creations remain in the shelf.
-      setRuns(saved.runs);}},()=>{if(alive)setReadFailed(true);}).finally(()=>{if(alive)setReady(true);});return()=>{alive=false;};},[]);
-  useEffect(()=>{if(ready&&!readFailed)void persist({board,runs,activeRunId}).catch(()=>{});},[ready,readFailed,board,runs,activeRunId,persist]);
+  const authoredContext=!!(board.title||board.intent||board.interpretation||board.edges.length||board.nodes.some(n=>n.customMeaning||n.note||n.role!=="subject"));
+  const configurationActive=configurationChosen||authoredContext;
+  const settings:GenerationSettings={kind,locale:outputLocale,tone,model,reasoningEffort};
+  const currentState:CreationState={schemaVersion:1,id:"editor",createdAt:0,board,settings:configurationActive?settings:null,run:activeRun};
+  const saved=isStateSaved(currentState,data.saved);
+  useEffect(()=>{onSavedCount?.(groupCreations(data.saved).length);},[data.saved,onSavedCount]);
+  useEffect(()=>()=>{if(editTimer.current)clearTimeout(editTimer.current);const job=jobRef.current;if(job&&!job.finished){job.canceled=true;job.controller.abort();void fetch("/api/generations",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:job.run.id,cancelToken:job.token}),keepalive:true}).catch(()=>{});}},[]);
   const checkConnection=useCallback(async()=>{
     setConfig(null);setConfigFailed(false);
-    try {const response=await fetch("/api/generations",{signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error();const next:GenerationConfig=await response.json();if(!Array.isArray(next.models))throw new Error();setConfig(next);setReasoningEffort(next.reasoningEffort||"default");setModel(current=>next.models.includes(current)?current:next.models[0]||"");}
+    try {const response=await fetch("/api/generations",{signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error();const next:GenerationConfig=await response.json();if(!Array.isArray(next.models))throw new Error();setConfig(next);setReasoningEffort(current=>configurationEdited.current?current:next.reasoningEffort||"default");setModel(current=>configurationEdited.current?current:current||next.models[0]||"");}
     catch {setConfigFailed(true);}
   },[]);
   useEffect(()=>{void checkConnection();},[checkConnection]);
   useEffect(()=>{
-    if(!pendingResultId || !runs.some(r=>r.id===pendingResultId&&r.status!=="running"))return;
+    if(!pendingResultId || !(activeRun?.id===pendingResultId&&activeRun.status!=="running"))return;
     if(resultsRef.current?.getClientRects().length)resultsRef.current.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth",block:"start"});
     setPendingResultId(null);
-  },[runs,pendingResultId]);
+  },[activeRun,pendingResultId]);
   useEffect(()=>{
     const deselect=(e:KeyboardEvent)=>{if(e.key==="Escape"&&!document.querySelector("dialog[open]")){setSelectedIds([]);setPickerOpen(false);}};
     window.addEventListener("keydown",deselect);return()=>window.removeEventListener("keydown",deselect);
@@ -101,7 +110,7 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
   const selectedNodes=board.nodes.filter(n=>selectedIds.includes(n.id));
   const selected=selectedNodes.length===1?selectedNodes[0]:undefined;
   const displayBrief=compileBrief(board,locale);
-  useEffect(()=>{setNotice("");setCanvasNotice("");},[locale]);
+  useEffect(()=>{setNotice("");setCanvasNotice("");if(!configurationEdited.current){setOutputLocale(locale);setTone(playgroundLabels[locale].toneDefault);}},[locale]);
   function rememberSelection(){
     const g=geometryRef.current,clip=copySelection(board,selectedIds,{width:g.width,height:g.height});
     if(clip){clipboardRef.current=clip;pasteCount.current=0;setCanPaste(true);setCanvasNotice(clip.nodes.length===1?t.selectionCopiedOne:t.selectionCopied.replace("{count}",String(clip.nodes.length)));}
@@ -159,85 +168,118 @@ export default function Playground({locale,seed}:{locale:Locale;seed:Seed|null})
     }
   }
   async function copy(text:string) {try{await navigator.clipboard.writeText(text);setNotice(t.copied);return true;}catch{setNotice(t.copyFailed);return false;}}
-  async function importBoard(file:File) {
-    try {if(file.size>512000)throw new Error();const next=parseComposition(JSON.parse(await file.text()));dispatch({type:"replace",board:next});setSelectedIds([]);setReadFailed(false);setNotice("");}
-    catch {setNotice(t.importError);}
+  async function saveCreation(state:CreationState=currentState) {
+    if(!canSaveState(state))return false;
+    try {await data.put("saved",saveableState(makeState(state.board,state.settings,state.run)));setNotice(c.saveDone);return true;}
+    catch {setNotice(c.saveFailed);return false;}
+  }
+  async function keepCreation() {
+    if(!containsWork(currentState))return;
+    try{const row=await data.put("temporary",makeState(board,currentState.settings,activeRun));activeCheckpoint.current=row;setNotice(c.kept);}catch(error){setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed);}
+  }
+  function requestReplacement(action:()=>void) {
+    if(busyRef.current){setNotice(c.wait);return;}
+    setPreview(null);setReadingRun(null);
+    setReplacementFailed(false);if(containsWork(currentState)&&!saved)setPendingReplacement(()=>action);else action();
+  }
+  function restoreCreation(source:CreationState,parts:RestoreParts) {
+    requestReplacement(()=>{const next=restoreState(currentState,source,parts,locale);if(parts.canvas)dispatch({type:"load",board:next.state.board});else if(parts.configuration)dispatch({type:"replace",board:next.state.board});
+      setConfigurationChosen(!!next.state.settings);configurationEdited.current=!!next.state.settings;
+      if(next.state.settings){setOutputLocale(next.state.settings.locale);setTone(next.state.settings.tone);setKind(next.state.settings.kind);setModel(next.state.settings.model);setReasoningEffort(next.state.settings.reasoningEffort||"default");}
+      else {setOutputLocale(locale);setTone(t.toneDefault);setKind("interpretation");setModel(config?.models[0]||"");setReasoningEffort(config?.reasoningEffort||"default");}
+      setActiveRun(next.state.run?structuredClone(next.state.run):null);activeCheckpoint.current=dataRef.current.temporary.find(r=>r.state.id===source.id)||null;
+      if(parts.canvas){setSelectedIds([]);setPickerOpen(false);setResetVersion(v=>v+1);setFitVersion(v=>v+1);}setTarget("");setRelation("");setCanvasNotice("");
+      setNotice(next.partialContext?c.portable:c.restoreDone);onEdit?.();
+    });
+  }
+  async function removeRecords(collection:Collection,records:CreationRecord[]) {
+    try {await data.remove(collection,records);setDeleted({collection,records});setPendingRemoval(null);setNotice("");}
+    catch(error){const message=error instanceof CreationConflict?c.conflict:c.saveFailed;setNotice(message);setRemovalError(message);}
+  }
+  function askRemove(collection:Collection,records:CreationRecord[]) {
+    if(!records.length)return;setRemovalError("");if(records.length>1)setPendingRemoval({collection,records});else void removeRecords(collection,records);
+  }
+  async function undoDelete(){if(!deleted)return;try{for(const row of deleted.records)await data.put(deleted.collection,row.state);setDeleted(null);}catch(error){setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed);}}
+  async function finishRun(job:Job,finished:GenerationRun){
+    if(job.finished)return;job.finished=true;
+    setActiveRun(current=>current?.id===finished.id?finished:current);
+    setDeleted(current=>current?{...current,records:current.records.map(row=>row.state.run?.id===finished.id?{...row,state:{...row.state,run:finished}}:row)}:null);
+    if(job.row&&dataRef.current.temporary.some(row=>row.key===job.row!.key)){try{const row=await dataRef.current.put("temporary",{...job.row.state,run:finished},job.row.revision);if(activeCheckpoint.current?.key===job.row.key)activeCheckpoint.current=row;}catch(error){setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed);}}
   }
   async function generate() {
-    if(busyRef.current||!board.nodes.length||!config?.configured)return;
-    busyRef.current=true;setBusy(true);
-    const settings:GenerationSettings={kind,locale,tone:t.toneDefault,model,reasoningEffort};
-    const run:GenerationRun={id:crypto.randomUUID(),createdAt:Date.now(),identity:semanticIdentity(board,locale),board:structuredClone(board),brief:compileBrief(board,locale),settings,status:"running"};
-    const next=[run,...runs].slice(0,SAVED_RUN_LIMIT);setRuns(next);setActiveRunId(run.id);setPendingResultId(run.id);
-    // Persist the immutable input before the deliberate submission. No automatic retries.
-    if(!readFailed)await persist({board,runs:next,activeRunId:run.id}).catch(()=>{});
+    if(busyRef.current||!board.nodes.length||!config?.configured||!config.models.includes(model))return;
+    configurationEdited.current=true;setConfigurationChosen(true);busyRef.current=true;setBusy(true);
+    const run:GenerationRun={id:crypto.randomUUID(),createdAt:Date.now(),identity:semanticIdentity(board,settings.locale),board:structuredClone(board),brief:compileBrief(board,settings.locale),settings:{...settings},status:"running"};
+    const job:Job={run,token:crypto.randomUUID(),controller:new AbortController(),canceled:false,finished:false};jobRef.current=job;
+    setActiveRun(run);setPendingResultId(run.id);
     try {
-      const response=await fetch("/api/generations",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:run.id,board:run.board,settings}),signal:AbortSignal.timeout(135000)});
-      const data=await response.json();
-      finishRun(response.ok&&data.result?{...run,status:"succeeded",result:data.result}:{...run,status:data.code==="unknown"||data.code==="unreadable"?"unknown":"failed",error:data.error||t.failedRun,errorCode:typeof data.code==="string"?data.code:undefined});
-    } catch {finishRun({...run,status:"unknown",error:t.unknown,errorCode:"unknown"});}
-    finally {busyRef.current=false;setBusy(false);}
+      try{job.row=await data.put("temporary",makeState(run.board,run.settings,run));activeCheckpoint.current=job.row;}catch(error){setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed);}
+      if(job.canceled){await finishRun(job,{...run,status:"canceled",errorCode:"canceled"});return;}
+      const response=await fetch("/api/generations",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:run.id,cancelToken:job.token,board:run.board,settings:run.settings}),signal:AbortSignal.any([job.controller.signal,AbortSignal.timeout(135000)])});
+      const result=await response.json();if(job.canceled)return;
+      await finishRun(job,response.ok&&result.result?{...run,status:"succeeded",result:result.result}:{...run,status:result.code==="canceled"?"canceled":result.code==="unknown"||result.code==="unreadable"?"unknown":"failed",error:result.error||t.failedRun,errorCode:typeof result.code==="string"?result.code:undefined});
+    }catch{if(!job.canceled)await finishRun(job,{...run,status:"unknown",error:t.unknown,errorCode:"unknown"});}
+    finally{if(jobRef.current===job){busyRef.current=false;setBusy(false);}}
   }
-  function finishRun(finished:GenerationRun) {
-    setRuns(current=>current.map(run=>run.id===finished.id?finished:run));
-    // A deleted pending creation stays deleted; Undo still restores its completed response.
-    setDeletedRun(current=>current?.run.id===finished.id?{...current,run:finished}:current);
+  function cancelGeneration(){const job=jobRef.current;if(!job||job.finished)return;job.canceled=true;job.controller.abort();busyRef.current=false;setBusy(false);setPendingResultId(null);setNotice(c.cancelled);
+    setActiveRun(current=>current?.id===job.run.id?{...job.run,status:"canceled",errorCode:"canceled"}:current);
+    if(job.row)void finishRun(job,{...job.run,status:"canceled",errorCode:"canceled"});
+    void fetch("/api/generations",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:job.run.id,cancelToken:job.token}),signal:AbortSignal.timeout(8000)}).catch(()=>{});
   }
-  function resetCanvas() {
-    dispatch({type:"replace",board:emptyComposition()});setSelectedIds([]);setPickerOpen(false);setCanvasNotice("");
-    setActiveRunId(null);setReadingId(null);setPendingResultId(null);setTarget("");setRelation("");setNotice("");
-    setResetVersion(version=>version+1);boardRef.current?.focus({preventScroll:true});
-  }
-  function deleteResult(id:string) {
-    const run=runs.find(run=>run.id===id);if(!run)return;
-    setDeletedRun({run,wasActive:id===activeRunId});setRuns(current=>current.filter(run=>run.id!==id));
-    if(id===activeRunId)setActiveRunId(null);
-    if(id===readingId)setReadingId(null);
-    if(id===pendingResultId)setPendingResultId(null);
-  }
-  function undoDelete() {
-    if(!deletedRun)return;
-    setRuns(current=>[deletedRun.run,...current.filter(run=>run.id!==deletedRun.run.id)].sort((a,b)=>b.createdAt-a.createdAt).slice(0,SAVED_RUN_LIMIT));
-    if(deletedRun.wasActive&&!activeRunId)setActiveRunId(deletedRun.run.id);
-    setDeletedRun(null);
-  }
+  function resetCanvas(){requestReplacement(()=>{dispatch({type:"load",board:emptyComposition()});setSelectedIds([]);setPickerOpen(false);setCanvasNotice("");setActiveRun(null);activeCheckpoint.current=null;setReadingRun(null);setPendingResultId(null);setTarget("");setRelation("");setNotice("");setConfigurationChosen(false);configurationEdited.current=false;setOutputLocale(locale);setTone(t.toneDefault);setKind("interpretation");setModel(config?.models[0]||"");setReasoningEffort(config?.reasoningEffort||"default");setResetVersion(version=>version+1);boardRef.current?.focus({preventScroll:true});});}
+  function clearConfiguration(){dispatch({type:"replace",board:restoreState(currentState,{...currentState,settings:null,run:null},{canvas:false,configuration:true,result:false},locale).state.board});setConfigurationChosen(false);configurationEdited.current=false;setOutputLocale(locale);setTone(t.toneDefault);setKind("interpretation");setModel(config?.models[0]||"");setReasoningEffort(config?.reasoningEffort||"default");}
   // Canvas nodes move directly; the tray needs a preview to cross its scroll boundary.
   const dragGlyph=dragging?.startsWith("tray:")?emojiById.get(dragging.slice(5))?.glyph:undefined;
-  const latestRun=runs.find(run=>run.id===activeRunId), readingRun=runs.find(run=>run.id===readingId);
-  function editResult(id:string,text:string) {setRuns(current=>current.map(run=>run.id===id&&run.result?{...run,result:{...run.result,text}}:run));}
-  function resultContent(run:GenerationRun) {return <StoryContent key={run.id} run={run} locale={locale} outputName={outputNames[run.settings.kind]} stale={run.identity!==semanticIdentity(board,run.settings.locale)} onEdit={text=>editResult(run.id,text)} onCopy={text=>copy(text)}/>;}
+  const latestRun=activeRun;
+  function editResult(id:string,text:string){
+    const run=activeRun?.id===id?activeRun:readingRun;if(!run?.result)return;const next={...run,result:{...run.result,text}};
+    if(activeRun?.id===id)setActiveRun(next);if(readingRun?.id===id)setReadingRun(next);
+    const row=activeCheckpoint.current;if(row?.state.run?.id===id){if(editTimer.current)clearTimeout(editTimer.current);const version=++editVersion.current;setEditingPending(true);editTimer.current=setTimeout(()=>{void dataRef.current.put("temporary",{...row.state,run:next},row.revision).then(updated=>{if(activeCheckpoint.current?.key===row.key)activeCheckpoint.current=updated;},error=>setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed)).finally(()=>{if(version===editVersion.current)setEditingPending(false);});},500);}
+  }
+  function resultContent(run:GenerationRun){return <><StoryContent key={run.id} run={run} locale={locale} outputName={outputNames[run.settings.kind]} stale={!resultMatches(board,currentState.settings,run)} onEdit={text=>editResult(run.id,text)} onCopy={text=>copy(text)}/></>;}
   const outputNames:Record<OutputKind,string>={interpretation:t.interpretOutput,message:t.message,poem:t.poem,story:t.story,lyrics:t.lyrics,"image-prompt":t.imagePrompt,storyboard:t.storyboard};
   const inspector=<div className="pg-panel pg-inspector"><h2>{t.inspector}</h2>{selected?<><div className="pg-selected"><span><EmojiArtwork glyph={selected.glyph}/></span><p>{nodeLabel(selected,locale)}</p><button aria-label={t.duplicate} title={t.duplicate} disabled={board.nodes.length>=NODE_LIMIT} onClick={()=>{const node={...selected,id:crypto.randomUUID(),x:clamp(selected.x+5),y:clamp(selected.y+5)};dispatch({type:"add",node});setSelectedIds([node.id]);}}><Copy size={16}/></button><button aria-label={t.remove} title={t.remove} onClick={()=>dispatch({type:"remove",id:selected.id})}><Trash2 size={16}/></button></div><div className="pg-inspector-fields"><MeaningField key={`${selected.id}:${locale}`} label={t.meaning} value={nodeMeaning(selected,locale)} onCommit={meaning=>dispatch({type:"update",id:selected.id,patch:{meaning,customMeaning:true}})}/><label>{t.role}<select aria-label={t.role} value={selected.role} onChange={e=>dispatch({type:"update",id:selected.id,patch:{role:e.target.value as BoardNode["role"]}})}><option value="subject">{t.subject}</option><option value="setting">{t.setting}</option><option value="mood">{t.mood}</option></select></label>{!!emojiById.get(selected.emojiId)?.variants.length&&<label>{t.variant}<select aria-label={t.variant} value={selected.glyph} onChange={e=>dispatch({type:"update",id:selected.id,patch:{glyph:e.target.value}})}><option value={emojiById.get(selected.emojiId)!.glyph}>{emojiById.get(selected.emojiId)!.glyph} {emojiById.get(selected.emojiId)!.labels[locale]}</option>{emojiById.get(selected.emojiId)!.variants.map(v=><option value={v.glyph} key={v.id}>{v.glyph} {v.labels[locale]}</option>)}</select></label>}<label className="pg-note">{t.note}<input aria-label={t.note} maxLength={500} value={selected.note} onChange={e=>dispatch({type:"update",id:selected.id,patch:{note:e.target.value}})}/></label></div>
           {board.nodes.length>1&&<form className="pg-connect" onSubmit={e=>{e.preventDefault();if(target&&relation.trim()&&target!==selected.id){dispatch({type:"edge",edge:{id:crypto.randomUUID(),source:selected.id,target,label:relation.trim()}});setRelation("");}}}><select aria-label={t.target} value={target===selected.id?"":target} onChange={e=>setTarget(e.target.value)}><option value="">{t.target}…</option>{board.nodes.filter(n=>n.id!==selected.id).map((n,i)=><option key={n.id} value={n.id}>{n.glyph} {nodeMeaning(n,locale)} ({i+1})</option>)}</select><input aria-label={t.relationship} maxLength={80} placeholder={t.relationPlaceholder} value={relation} onChange={e=>setRelation(e.target.value)}/><button type="submit" disabled={!board.nodes.some(n=>n.id===target&&n.id!==selected.id)||!relation.trim()}><Plus size={15}/>{t.connect}</button></form>}</>:selectedNodes.length>1?<div className="pg-group-inspector"><p>{t.groupSelected.replace("{count}",String(selectedNodes.length))}</p><p>{t.groupHint}</p><button className="pg-secondary" onClick={()=>{dispatch({type:"removeMany",ids:selectedNodes.map(n=>n.id)});setSelectedIds([]);}}><Trash2 size={15}/>{t.deleteGroup}</button></div>:<p>{t.select}</p>}
           {!!board.edges.length&&<div className="pg-relationships"><h3>{t.connections}</h3>{board.edges.map(e=><div key={e.id}><span>{board.nodes.find(n=>n.id===e.source)?.glyph} {e.label} → {board.nodes.find(n=>n.id===e.target)?.glyph}</span><button aria-label={`${t.remove} ${e.label}`} onClick={()=>dispatch({type:"removeEdge",id:e.id})}><X size={14}/></button></div>)}</div>}</div>;
   if(!ready)return <div className="pg-loading" role="status">{t.loading}</div>;
   return <section className={`playground ${dragging?"is-dragging":""}`} aria-label={t.name}>
-    {(notice||readFailed)&&<div className="storage-notice" role="status"><span>{readFailed?t.readFailed:notice}</span>{readFailed?<button onClick={()=>{dispatch({type:"replace",board:emptyComposition()});setReadFailed(false);}}>{t.fresh}</button>:<button aria-label={t.closeNotice} onClick={()=>setNotice("")}><X size={16}/></button>}</div>}
+    {(notice||readNotice)&&<div className="storage-notice" role="status"><span>{readNotice?c.readFailed:notice}</span>{readNotice&&<button onClick={()=>{setReadNotice(true);void data.refresh();}}>{c.retry}</button>}<button aria-label={t.closeNotice} onClick={()=>{setNotice("");setReadNotice(false);}}><X size={16}/></button></div>}
+    {view==="creations"&&busy&&generationNotice&&<div className="storage-notice" role="status"><span>{c.running}</span><button onClick={cancelGeneration}>{c.cancelGeneration}</button></div>}
+    <div hidden={view!=="creations"}><SavedCreations records={data.saved} locale={locale} outputNames={outputNames} busy={busy} onRestore={restoreCreation} onRemove={records=>askRemove("saved",records)} onCopy={copy} onBack={()=>onEdit?.()}/>{deleted?.collection==="saved"&&<div className="storage-notice" role="status"><span>{c.removed}</span><button onClick={()=>void undoDelete()}>{c.undo}</button></div>}</div>
+    <div hidden={view!=="editor"}>
+    <div className="cr-actions"><span className={`cr-action-status ${saved?"":"unsaved"}`}>{saved?<BookmarkCheck size={15}/>:<Bookmark size={15}/>} {saved?c.saved:c.unsaved}</span><div className="cr-action-buttons"><button disabled={!containsWork(currentState)||data.writing} onClick={()=>void keepCreation()}><History size={15}/>{c.keep}</button><button className="cr-save" disabled={!canSaveState(currentState)||data.writing} onClick={()=>void saveCreation()}><Bookmark size={15}/>{c.save}</button><button disabled={busy} onClick={resetCanvas}><Plus size={15}/>{c.new}</button></div></div>
     <CreationHeader
       locale={locale} board={board} interpretation={displayBrief.interpretation}
-      kind={kind} onKind={setKind} outputNames={outputNames}
-      model={model} onModel={setModel} reasoningEffort={reasoningEffort} onReasoning={setReasoningEffort}
+      outputLocale={outputLocale} onOutputLocale={value=>{configurationEdited.current=true;setConfigurationChosen(true);setOutputLocale(value);}}
+      kind={kind} onKind={value=>{configurationEdited.current=true;setConfigurationChosen(true);setKind(value);}} outputNames={outputNames}
+      model={model} onModel={value=>{configurationEdited.current=true;setConfigurationChosen(true);setModel(value);}} reasoningEffort={reasoningEffort} onReasoning={value=>{configurationEdited.current=true;setConfigurationChosen(true);setReasoningEffort(value);}}
       config={config} configFailed={configFailed} onCheck={()=>void checkConnection()}
       busy={busy} status={busy?t.generating:latestRun?.status==="succeeded"?t.generated:""}
-      error={latestRun&&(latestRun.status==="failed"||latestRun.status==="unknown")?generationErrorMessage(latestRun,locale):undefined}
+      error={latestRun&&(latestRun.status==="failed"||latestRun.status==="unknown"||latestRun.status==="canceled")?generationErrorMessage(latestRun,locale):undefined}
       onGenerate={()=>void generate()} onFields={patch=>dispatch({type:"fields",patch})}
-      onCopy={()=>void copy(displayBrief.interpretation)} onExport={()=>download(board,"emoji-playground.json")} onImport={()=>fileRef.current?.click()}
+      onCopy={()=>void copy(displayBrief.interpretation)} onCancel={cancelGeneration}
       inspector={inspector}
     />
-    <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e=>{const file=e.target.files?.[0];if(file)void importBoard(file);e.target.value="";}}/>
+    {configurationActive&&<button className="cr-config-reset" onClick={clearConfiguration}><SlidersHorizontal size={13}/>{c.clearConfiguration}</button>}
     <DndContext id="playground-editor" accessibility={dragAccessibility(locale,true)} sensors={sensors} autoScroll={false} onDragStart={e=>{setDragging(String(e.active.id));}} onDragEnd={endDrag} onDragCancel={()=>setDragging(null)}>
       <div className="pg-workspace">
-        <div className="pg-canvas-column"><Canvas onUndo={()=>dispatch({type:"undo"})} onRedo={()=>dispatch({type:"redo"})} onReset={resetCanvas} notice={canvasNotice} onCopyEvent={handleCopy} onPasteEvent={handlePaste} onCopy={copyObjects} onPaste={pasteObjects} canPaste={canPaste&&board.nodes.length<NODE_LIMIT} onArrange={direction=>{dispatch({type:"arrange",ids:selectedIds,direction});setCanvasNotice(t.layerChanged);}} resetVersion={resetVersion} board={board} locale={locale} selectedIds={selectedNodes.map(n=>n.id)} onSelect={setSelectedIds} onTransform={nodes=>dispatch({type:"transform",updates:nodes.map(({id,x,y,scale,rotation})=>({id,patch:{x,y,scale,rotation}}))})} onRemove={ids=>{dispatch({type:"removeMany",ids});setSelectedIds([]);}} onAdd={()=>setPickerOpen(true)} boardRef={boardRef} geometryRef={geometryRef} pickerOpen={pickerOpen} trayDragging={!!dragging} setPickerOpen={setPickerOpen} overlay={<DragOverlay dropAnimation={null}>{dragGlyph&&<span className="pg-drag-glyph"><EmojiArtwork glyph={dragGlyph}/></span>}</DragOverlay>} toolbar={<div className="pg-canvas-toolbar"><output aria-label={t.objectCount.replace("{count}",String(board.nodes.length)).replace("{limit}",String(NODE_LIMIT))}>{board.nodes.length}/{NODE_LIMIT}</output><div><ToolbarTooltip label={t.undoHint} shortcut="Z"><button aria-label={t.undo} aria-keyshortcuts="Control+Z Meta+Z" disabled={!history.past.length} onClick={()=>dispatch({type:"undo"})}><Undo2 size={17}/></button></ToolbarTooltip><ToolbarTooltip label={t.redoHint} shortcut="Shift+Z"><button aria-label={t.redo} aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" disabled={!history.future.length} onClick={()=>dispatch({type:"redo"})}><Redo2 size={17}/></button></ToolbarTooltip><ToolbarTooltip label={t.clearHint} shortcut="R"><button aria-label={t.clear} aria-keyshortcuts="Control+R Meta+R" onClick={resetCanvas}><RotateCcw size={16}/></button></ToolbarTooltip></div></div>} picker={<EmojiPicker sceneEmojiIds={board.nodes.map(n=>n.emojiId)} locale={locale} state={pickerState} onChange={setPickerState} onAdd={add} disabled={board.nodes.length>=NODE_LIMIT}/>}/>
-          <p id="pg-canvas-keyboard-hint" className="pg-hint">{t.hint}</p><p className={`pg-save ${saveStatus==="failed"?"error":""}`} role="status">{readFailed?t.readFailed:saveStatus==="saving"?t.saving:saveStatus==="failed"?t.failed:t.saved}</p>
+        <div className="pg-canvas-column"><Canvas onUndo={()=>dispatch({type:"undo"})} onRedo={()=>dispatch({type:"redo"})} onReset={resetCanvas} resetDisabled={busy} notice={canvasNotice} onCopyEvent={handleCopy} onPasteEvent={handlePaste} onCopy={copyObjects} onPaste={pasteObjects} canPaste={canPaste&&board.nodes.length<NODE_LIMIT} onArrange={direction=>{dispatch({type:"arrange",ids:selectedIds,direction});setCanvasNotice(t.layerChanged);}} resetVersion={resetVersion} fitVersion={fitVersion} board={board} locale={locale} selectedIds={selectedNodes.map(n=>n.id)} onSelect={setSelectedIds} onTransform={nodes=>dispatch({type:"transform",updates:nodes.map(({id,x,y,scale,rotation})=>({id,patch:{x,y,scale,rotation}}))})} onRemove={ids=>{dispatch({type:"removeMany",ids});setSelectedIds([]);}} onAdd={()=>setPickerOpen(true)} boardRef={boardRef} geometryRef={geometryRef} pickerOpen={pickerOpen} trayDragging={!!dragging} setPickerOpen={setPickerOpen} overlay={<DragOverlay dropAnimation={null}>{dragGlyph&&<span className="pg-drag-glyph"><EmojiArtwork glyph={dragGlyph}/></span>}</DragOverlay>} toolbar={<div className="pg-canvas-toolbar"><output aria-label={t.objectCount.replace("{count}",String(board.nodes.length)).replace("{limit}",String(NODE_LIMIT))}>{board.nodes.length}/{NODE_LIMIT}</output><div><ToolbarTooltip label={t.undoHint} shortcut="Z"><button aria-label={t.undo} aria-keyshortcuts="Control+Z Meta+Z" disabled={!history.past.length} onClick={()=>dispatch({type:"undo"})}><Undo2 size={17}/></button></ToolbarTooltip><ToolbarTooltip label={t.redoHint} shortcut="Shift+Z"><button aria-label={t.redo} aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" disabled={!history.future.length} onClick={()=>dispatch({type:"redo"})}><Redo2 size={17}/></button></ToolbarTooltip><ToolbarTooltip label={t.clearHint} shortcut="R"><button aria-label={t.clear} aria-keyshortcuts="Control+R Meta+R" disabled={busy} onClick={resetCanvas}><RotateCcw size={16}/></button></ToolbarTooltip></div></div>} picker={<EmojiPicker sceneEmojiIds={board.nodes.map(n=>n.emojiId)} locale={locale} state={pickerState} onChange={setPickerState} onAdd={add} disabled={board.nodes.length>=NODE_LIMIT}/>}/>
+          <p id="pg-canvas-keyboard-hint" className="pg-hint">{t.hint}</p><p className="pg-save" role="status">{data.writing||editingPending?t.saving:saved?c.saved:c.unsaved}</p>
 
         </div>
         <aside ref={resultsRef} className="pg-output" aria-label={t.result}>
-          {latestRun&&<ReadingButton locale={locale} onClick={()=>setReadingId(latestRun.id)}/>}
+          {latestRun&&<ReadingButton locale={locale} onClick={()=>setReadingRun(latestRun)}/>}
+          {latestRun&&!resultMatches(board,currentState.settings,latestRun)&&latestRun.result&&<div className="cr-reference"><strong>{c.reference}</strong>{c.referenceHint}<button className="pg-link" onClick={()=>setPreview(makeState(latestRun.board,latestRun.settings,latestRun))}>{c.source}</button></div>}
           {latestRun?resultContent(latestRun):<StoryPage><span className="pg-story-kicker">{s.chapter}</span><StorySymbols nodes={board.nodes} locale={locale}/><h3 className="pg-story-title">{s.blank}</h3><div className="pg-story-divider" aria-hidden="true"><span>✧</span></div><p className="pg-story-invitation">{s.blankHint}</p><Feather className="pg-story-feather" size={36}/><span className="pg-story-end" aria-hidden="true">❧</span></StoryPage>}
         </aside>
       </div>
     </DndContext>
-    <StoryShelf runs={runs} locale={locale} outputNames={outputNames} onOpen={setReadingId} onDelete={deleteResult} onUndo={undoDelete} deletedTitle={deletedRun?(creationTitle(deletedRun.run)||outputNames[deletedRun.run.settings.kind]):undefined}/>
-    {readingRun&&<StoryModal title={creationTitle(readingRun)||outputNames[readingRun.settings.kind]} locale={locale} onClose={()=>setReadingId(null)}>{resultContent(readingRun)}</StoryModal>}
+    <TemporaryCreations records={data.temporary} saved={data.saved} locale={locale} outputNames={outputNames} busy={busy} onRestore={restoreCreation} onSave={state=>void saveCreation(state)} onRemove={records=>askRemove("temporary",records)} onView={setPreview} undo={deleted?.collection==="temporary"} onUndo={()=>void undoDelete()}/>
+    </div>
+    {readingRun&&<StoryModal title={creationTitle(readingRun)||outputNames[readingRun.settings.kind]} locale={locale} onClose={()=>setReadingRun(null)}>{resultContent(readingRun)}</StoryModal>}
+    {preview&&<StoryModal title={preview.run?creationTitle(preview.run)||outputNames[preview.run.settings.kind]:preview.board.title||c.untitled} locale={locale} onClose={()=>setPreview(null)}><CreationDetail state={preview} locale={locale} outputNames={outputNames} busy={busy} onRestore={restoreCreation} onCopy={copy}/></StoryModal>}
+    {pendingReplacement&&<CreationDialog locale={locale} title={c.replaceTitle} onCancel={()=>setPendingReplacement(null)}><p>{c.replaceHint}</p>{replacementFailed&&<p role="alert">{c.saveFailed}</p>}<div className="cr-dialog-actions"><button autoFocus className="primary-button" disabled={data.writing||!canSaveState(currentState)} onClick={async()=>{if(await saveCreation()){const action=pendingReplacement;setPendingReplacement(null);action();}else setReplacementFailed(true);}}>{c.saveContinue}</button><button onClick={()=>{const action=pendingReplacement;setPendingReplacement(null);action();}}>{c.discardContinue}</button><button onClick={()=>setPendingReplacement(null)}>{c.cancel}</button></div></CreationDialog>}
+    {pendingRemoval&&<CreationDialog locale={locale} title={pendingRemoval.collection==="temporary"?c.removeTitle:locale==="es"?"¿Eliminar estas creaciones guardadas?":"Remove these saved creations?"} onCancel={()=>setPendingRemoval(null)}><p>{pendingRemoval.collection==="temporary"?c.removeHint:locale==="es"?"El historial temporal y el editor actual se conservarán.":"Temporary history and the current editor will stay intact."}</p>{removalError&&<p role="alert">{removalError}</p>}<div className="cr-dialog-actions"><button className="primary-button" disabled={data.writing} onClick={()=>void removeRecords(pendingRemoval.collection,pendingRemoval.records)}>{c.remove} ({pendingRemoval.records.length})</button><button onClick={()=>setPendingRemoval(null)}>{c.cancel}</button></div></CreationDialog>}
+
   </section>;
 }

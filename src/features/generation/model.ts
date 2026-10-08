@@ -6,7 +6,7 @@ export const reasoningEfforts=["default","low","medium","high"] as const;
 export type ReasoningEffort=typeof reasoningEfforts[number];
 export type GenerationSettings={kind:OutputKind;locale:Locale;tone:string;model:string;reasoningEffort?:ReasoningEffort};
 export type GenerationResult={text:string;title?:string;model:string;provider:"openrouter";usage?:{promptTokens:number;completionTokens:number;cost?:number};generationId?:string};
-export type GenerationRun={id:string;createdAt:number;identity:string;board:Composition;brief:ReturnType<typeof compileBrief>;settings:GenerationSettings;status:"running"|"succeeded"|"failed"|"unknown";result?:GenerationResult;error?:string;errorCode?:string};
+export type GenerationRun={id:string;createdAt:number;identity:string;board:Composition;brief:ReturnType<typeof compileBrief>;settings:GenerationSettings;status:"running"|"succeeded"|"failed"|"unknown"|"canceled";result?:GenerationResult;error?:string;errorCode?:string};
 
 /** Prefer the output-language title; older runs without one keep their scene title. */
 export function creationTitle(run:GenerationRun) {

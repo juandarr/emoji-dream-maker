@@ -1,4 +1,4 @@
-import { savedBoard, importSavedBoard } from "./helpers/playground-workspace";
+import { savedBoard, restoreBoard } from "./helpers/playground-workspace";
 import {expect,test,type Page,type Locator} from "@playwright/test";
 const fixture={schemaVersion:1,title:"Transform practice",intent:"",interpretation:"",nodes:[
   {id:"octopus",emojiId:"1F419",glyph:"🐙",label:"Octopus",meaning:"Octopus",note:"",role:"subject",x:20,y:35},
@@ -8,10 +8,11 @@ const fixture={schemaVersion:1,title:"Transform practice",intent:"",interpretati
 async function open(page:Page){
   await page.route("**/api/generations",r=>r.fulfill({json:{configured:true,models:["test/text"],maxOutputTokens:800}}));
   await page.goto("/");await page.getByRole("button",{name:"Playground",exact:true}).click();
-  await page.locator('input[type="file"]').setInputFiles({name:"legacy.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(fixture))});
+  await restoreBoard(page,fixture);
   await expect(page.locator(".pg-node")).toHaveCount(3);await page.emulateMedia({reducedMotion:"reduce"});
   // The authoring panels are now above the canvas; pointer coordinates need a visible stage.
   await page.locator(".pg-stage").scrollIntoViewIfNeeded();
+  await page.getByRole("button",{name:"Zoom out",exact:true}).click();await page.getByRole("button",{name:"Zoom out",exact:true}).click();
 }
 const values=(page:Page)=>page.locator(".pg-node").evaluateAll(els=>els.map(el=>({x:parseFloat((el as HTMLElement).style.left),y:parseFloat((el as HTMLElement).style.top),scale:Number((el as HTMLElement).dataset.scale),rotation:Number((el as HTMLElement).dataset.rotation)})));
 async function drag(page:Page,target:Locator,dx:number,dy:number){const b=await target.boundingBox();await page.mouse.move(b!.x+b!.width/2,b!.y+b!.height/2);await page.mouse.down();await page.mouse.move(b!.x+b!.width/2+dx,b!.y+b!.height/2+dy,{steps:12});await page.mouse.up();}
@@ -43,7 +44,7 @@ test("area-selected groups move, resize, rotate, persist and delete in single un
   await page.getByRole("button",{name:"Redo",exact:true}).click();expect(await values(page)).toEqual(rotated);
   await page.locator(".pg-object-delete").click();await expect(page.locator(".pg-node")).toHaveCount(1);await expect(page.locator(".pg-relationships")).toHaveCount(0);
   await page.getByRole("button",{name:"Undo",exact:true}).click();expect(await values(page)).toEqual(rotated);await expect(page.locator(".pg-relationships")).toContainText("friends");
-  await expect(page.getByText("Saved on this device",{exact:true})).toBeVisible();const snapshot=await savedBoard(page);await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-node")).toHaveCount(0);await importSavedBoard(page,snapshot);await expect.poll(()=>values(page)).toEqual(rotated);
+  await expect(page.locator(".pg-save")).not.toHaveText(/Saving|Guardando/);const snapshot=await savedBoard(page);await page.reload();await page.getByRole("button",{name:"Playground",exact:true}).click();await expect(page.locator(".pg-node")).toHaveCount(0);await restoreBoard(page,snapshot);await expect.poll(()=>values(page)).toEqual(rotated);
   await page.locator(".pg-node").nth(0).click();await page.locator(".pg-node").nth(1).click({modifiers:["Shift"]});await page.keyboard.press("Delete");await expect(page.locator(".pg-node")).toHaveCount(1);
 });
 
@@ -55,8 +56,7 @@ test("single-object handles work with keyboard and cancel pointer transforms on 
   const box=await resize.boundingBox();await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);await page.mouse.down();await page.mouse.move(box!.x+box!.width/2+80,box!.y+box!.height/2+80,{steps:8});
   expect((await values(page))[0].scale).toBeGreaterThan(1);await page.keyboard.press("Escape");await page.mouse.up();expect(await values(page)).toEqual(before);await expect(node).toHaveAttribute("aria-pressed","false");
   await node.click();await drag(page,resize,30,30);expect((await values(page))[0].scale).toBeGreaterThan(1);
-  await page.locator(".pg-board-menu summary").click();const download=page.waitForEvent("download");await page.getByRole("button",{name:"Export board",exact:true}).click();const exported=await download;await exported.saveAs("/tmp/playground-transforms.json");
-  await page.getByRole("button",{name:"Reset canvas",exact:true}).click();await page.locator('input[type="file"]').setInputFiles("/tmp/playground-transforms.json");expect((await values(page))[0].scale).toBeGreaterThan(1);
+  const snapshot=await savedBoard(page);await restoreBoard(page,snapshot);expect((await values(page))[0].scale).toBeGreaterThan(1);
 });
 
 test("area selection maps through a zoomed and panned camera",async({page})=>{
@@ -229,7 +229,7 @@ test("selection surface preserves Shift area selection and cancellation without 
   await page.keyboard.down("Shift");await page.mouse.move(frame.x,frame.y);await page.mouse.down();await page.mouse.move(frame.x+10,frame.y+12,{steps:8});await expect(page.locator(".pg-selection-area")).toBeVisible();await page.mouse.up();await page.keyboard.up("Shift");
   expect(await values(page)).toEqual(original);await expect(page.locator(".pg-node[aria-pressed=true]")).toHaveCount(2);await expect(page.locator(".pg-world")).toHaveAttribute("style",camera!);
   await page.mouse.move(frame.x,frame.y);await page.mouse.down();await page.mouse.move(frame.x+40,frame.y+25,{steps:8});expect(await values(page)).not.toEqual(original);await page.keyboard.press("Escape");await page.mouse.up();expect(await values(page)).toEqual(original);
-  await page.locator('input[type="file"]').setInputFiles({name:"overlap.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify({...fixture,nodes:fixture.nodes.map(n=>n.id==="flag"?{...n,x:32.5,y:35}:n)}))});
+  await restoreBoard(page,{...fixture,nodes:fixture.nodes.map(n=>n.id==="flag"?{...n,x:32.5,y:35}:n)});
   const nodes=page.locator(".pg-node");await nodes.nth(0).click();await nodes.nth(1).click({modifiers:["Shift"]});await expect(page.locator(".pg-node[aria-pressed=true]")).toHaveCount(2);
   // An unselected object between group members stays clickable above the transparent surface.
   await nodes.nth(2).click();await expect(nodes.nth(2)).toHaveAttribute("aria-pressed","true");await expect(page.locator(".pg-node[aria-pressed=true]")).toHaveCount(1);

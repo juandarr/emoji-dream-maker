@@ -1,3 +1,4 @@
+import { restoreBoard } from "./helpers/playground-workspace";
 import {expect,test,type Page} from "@playwright/test";
 const fixture={schemaVersion:1,title:"Shape practice",intent:"",interpretation:"",nodes:[
   {id:"donut",emojiId:"1F369",glyph:"🍩",label:"Doughnut",meaning:"Doughnut",note:"",role:"subject",x:35,y:45,scale:4,rotation:0},
@@ -6,9 +7,10 @@ const fixture={schemaVersion:1,title:"Shape practice",intent:"",interpretation:"
 async function open(page:Page,board=fixture){
   await page.route("**/api/generations",r=>r.fulfill({json:{configured:true,models:["test/text"],maxOutputTokens:800}}));
   await page.goto("/");await page.getByRole("button",{name:"Playground",exact:true}).click();await page.emulateMedia({reducedMotion:"reduce"});
-  await page.locator('input[type="file"]').setInputFiles({name:"shapes.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(board))});
+  await restoreBoard(page,board);
   await expect(page.locator(".pg-node")).toHaveCount(2);await expect(page.locator(".pg-board")).toHaveAttribute("data-shapes-ready","true");
   await page.getByRole("button",{name:"Enter fullscreen",exact:true}).click();
+  await page.getByRole("button",{name:"Zoom out",exact:true}).click();await page.getByRole("button",{name:"Zoom out",exact:true}).click();await page.getByRole("button",{name:"Zoom out",exact:true}).click();
 }
 async function geometry(page:Page,id="donut"){
   return page.locator(`.pg-node[data-id="${id}"]`).evaluate(el=>{
@@ -51,7 +53,7 @@ test("area selection ignores transparent corners and holes at different rotation
       await area(page,{x:blank.x-2,y:blank.y-2},{x:blank.x+2,y:blank.y+2});await expect(node).toHaveAttribute("aria-pressed","false");
       const original=await positions(page);await area(page,{x:g.x-6,y:g.y-6},{x:g.x+6,y:g.y+6});expect(await positions(page)).toEqual(original);await expect(node).toHaveAttribute("aria-pressed","false");
       const paint=at(g,-.4,0);await area(page,{x:g.x-g.size*.75,y:paint.y-3},{x:paint.x+3,y:paint.y+3});await expect(node).toHaveAttribute("aria-pressed","true");await expect(page.locator(".pg-node[aria-pressed=true]")).toHaveCount(1);
-      await expect(page.locator(".pg-world")).toHaveAttribute("style",camera!);await canvas.click({position:{x:b!.width-15,y:b!.height-15}});
+      await expect(page.locator(".pg-world")).toHaveAttribute("style",camera!);await canvas.click({position:{x:b!.width-15,y:b!.height-15}});if(zoom)await page.getByRole("button",{name:"Zoom out",exact:true}).click();
     }
   }
 });
@@ -60,7 +62,7 @@ test("transparent padding passes clicks through to overlapping artwork underneat
   await open(page);
   // The top heart's empty lower corner overlays the solid part of the lower doughnut.
   const overlap={...fixture,nodes:[{...fixture.nodes[0],x:40,y:50},{...fixture.nodes[1],x:40,y:50}]};
-  await page.locator('input[type="file"]').setInputFiles({name:"overlap.json",mimeType:"application/json",buffer:Buffer.from(JSON.stringify(overlap))});await expect(page.locator(".pg-board")).toHaveAttribute("data-shapes-ready","true");
+  await restoreBoard(page,overlap);await expect(page.locator(".pg-board")).toHaveAttribute("data-shapes-ready","true");
   const g=await geometry(page,"heart"),p=at(g,.35,.35);
   await page.mouse.click(p.x,p.y);await expect(page.locator('.pg-node[data-id="heart"]')).toHaveAttribute("aria-pressed","false");await expect(page.locator('.pg-node[data-id="donut"]')).toHaveAttribute("aria-pressed","true");
 });
