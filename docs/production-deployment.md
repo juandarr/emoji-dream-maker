@@ -21,7 +21,7 @@ flowchart LR
 
 Browser verification runs in parallel with unit/controller/image verification; the required `CI` job succeeds only when both pass. The workflow exports the tested image and publishes that exact artifact, rather than rebuilding it. Images use `sha-<40-character-commit>` and the moving `production` tag in `ghcr.io/juandarr/emoji-dream-maker`. The server resolves the tag to an immutable digest and records its Git revision and account schema. Main workflow runs are serialized and superseded commits are skipped before promotion. A manual run from another branch only verifies it.
 
-The host polls once a minute using systemd. It requires outbound access to GHCR; it exposes no deployment endpoint and needs no inbound SSH from GitHub or self-hosted Actions runner. Caddy exposes 80/443; Docker publishes the app only on `127.0.0.1:3000`. The Caddy example replaces client-supplied `X-Forwarded-For` with the directly connected client's IP. Revisit that configuration if a CDN or tunnel is introduced later.
+The host polls once a minute using systemd. It requires outbound access to GHCR; it exposes no deployment endpoint and needs no inbound SSH from GitHub or self-hosted Actions runner. Caddy exposes 80/443; Docker publishes the app only on `127.0.0.1:3101` (container port 3000). Port 3000 is already occupied by another container on this server; that service is preserved. The Caddy example replaces client-supplied `X-Forwarded-For` with the directly connected client's IP. Revisit that configuration if a CDN or tunnel is introduced later.
 
 ## Files and persistent paths
 
@@ -32,7 +32,7 @@ The host polls once a minute using systemd. It requires outbound access to GHCR;
 | `deploy/manage.py` | Serialized updates, clone preflight, backup validation, durable recovery journal and rollback |
 | `deploy/Caddyfile.example` | Host site and filesystem maintenance gate |
 | `/opt/dreammaker/app.env` | Root-owned production secrets/configuration, mode 0600 |
-| `/opt/dreammaker/deployment.json` | Registry and persistent path configuration |
+| `/opt/dreammaker/deployment.json` | Registry, public origin, host port and persistent path configuration |
 | `/opt/dreammaker/state.json` | Current/previous immutable images, backups, pause/failure status and journal |
 | `/opt/dreammaker/control/maintenance.flag` | Existence causes Caddy to return 503 with `Retry-After` |
 | `/var/lib/dreammaker/accounts/accounts.sqlite` | Live database, including account credentials and durable attempts |
@@ -68,7 +68,7 @@ sudo docker version
 sudo docker compose version
 caddy version
 sudo systemctl status caddy --no-pager
-sudo ss -ltnp 'sport = :3000'
+sudo ss -ltnp 'sport = :3101'
 df -h / /var
 ```
 
@@ -95,7 +95,7 @@ sudo docker run --rm hello-world
 sudo docker compose version
 ```
 
-If conflicting distro packages are installed, resolve them using Docker's instructions before installing; do not remove packages supporting other services blindly. Keep Docker commands under `sudo`. Port 3000 must be free. Retain router forwarding to Caddy on 80/443, and ensure DNS points to this home connection. This runbook assumes Caddy already works on the host.
+If conflicting distro packages are installed, resolve them using Docker's instructions before installing; do not remove packages supporting other services blindly. Keep Docker commands under `sudo`. Port 3101 must be free. If needed, choose another unused port using `host_port` in `/opt/dreammaker/deployment.json` and update this app's Caddy upstream to match; container port 3000 stays fixed. Retain router forwarding to Caddy on 80/443, and ensure DNS points to this home connection. This runbook assumes Caddy already works on the host.
 
 Clone the reviewed `main` branch into a new tools checkout (it never stores live data):
 
@@ -178,7 +178,7 @@ sudo docker exec dreammaker-app node scripts/account-check.mjs /data/accounts.sq
 sudo docker port dreammaker-app
 ```
 
-Confirm the health revision matches the published main commit and port mapping is **127.0.0.1:3000**. In a browser, sign in with an existing account and inspect preferences, favorites and both creation collections. Check saved board restoration, a theme change, logout/login and optional providers. Your existing password should work. Verify unauthorized account APIs return 401 and no raw database files are publicly available.
+Confirm the health revision matches the published main commit and port mapping is **127.0.0.1:3101** (or your configured host port). In a browser, sign in with an existing account and inspect preferences, favorites and both creation collections. Check saved board restoration, a theme change, logout/login and optional providers. Your existing password should work. Verify unauthorized account APIs return 401 and no raw database files are publicly available.
 
 Perform a verified backup and observe the daily schedule:
 
@@ -218,7 +218,7 @@ curl --fail https://dreammaker.hexloop.cc/api/health
 sudo python3 /opt/dreammaker/manage.py resume
 ```
 
-This config-only restart causes a brief interruption; do it during a quiet period. If persistent paths were customized, export matching `DREAMMAKER_DATA_DIR`/`DREAMMAKER_CACHE_DIR` for Compose, or use the controller with an updated image rather than this default-path command. Do not rotate the auth secret as part of a routine config edit.
+This config-only restart causes a brief interruption; do it during a quiet period. If paths/port were customized, export matching `DREAMMAKER_DATA_DIR`/`DREAMMAKER_CACHE_DIR`/`DREAMMAKER_HOST_PORT` for Compose, or use the controller with an updated image rather than this default-path command. Do not rotate the auth secret as part of a routine config edit.
 
 ### Controller and dependency updates
 

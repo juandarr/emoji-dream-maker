@@ -61,6 +61,9 @@ class Manager:
         self.repository = self.config["repository"]
         if not re.fullmatch(r"ghcr\.io/[a-z0-9_.-]+/[a-z0-9_.-]+", self.repository):
             raise DeploymentError("Invalid deployment registry repository")
+        self.port = self.config.get("host_port", 3101)
+        if type(self.port) is not int or not 1024 <= self.port <= 65535:
+            raise DeploymentError("host_port must be an integer between 1024 and 65535")
         self.data = Path(self.config["data_dir"])
         self.cache = Path(self.config["cache_dir"])
         self.backups = Path(self.config["backup_dir"])
@@ -122,7 +125,7 @@ class Manager:
             raise DeploymentError(f"Command {arguments[0]} {arguments[1] if len(arguments)>1 else ''} {reason}; inspect host/container diagnostics privately") from error
 
     def compose(self, *arguments):
-        environment = [f"DREAMMAKER_ROOT={self.root}", f"DREAMMAKER_DATA_DIR={self.data}", f"DREAMMAKER_CACHE_DIR={self.cache}"]
+        environment = [f"DREAMMAKER_ROOT={self.root}", f"DREAMMAKER_DATA_DIR={self.data}", f"DREAMMAKER_CACHE_DIR={self.cache}", f"DREAMMAKER_HOST_PORT={self.port}"]
         return self.command("env", *environment, "docker", "compose", "--env-file", str(self.root / "image.env"), "-f", str(self.root / "compose.yaml"), *arguments)
 
     def select(self, image):
@@ -390,7 +393,7 @@ def install(root):
     # Caddy must be able to traverse these directories regardless of sudo umask.
     root.chmod(0o755)
     (root / "control").chmod(0o755)
-    config = {"repository": "ghcr.io/juandarr/emoji-dream-maker", "origin": "https://dreammaker.hexloop.cc", "data_dir": "/var/lib/dreammaker/accounts", "cache_dir": "/var/cache/dreammaker/youtube", "backup_dir": "/var/backups/dreammaker"}
+    config = {"repository": "ghcr.io/juandarr/emoji-dream-maker", "origin": "https://dreammaker.hexloop.cc", "host_port": 3101, "data_dir": "/var/lib/dreammaker/accounts", "cache_dir": "/var/cache/dreammaker/youtube", "backup_dir": "/var/backups/dreammaker"}
     config_path = root / "deployment.json"
     if config_path.exists():
         config = json.loads(config_path.read_text())

@@ -353,6 +353,20 @@ class RecoveryTests(unittest.TestCase):
         self.assertNotIn("private-value", str(result.exception))
         self.assertIn("exited 1", str(result.exception))
 
+    def test_compose_receives_configured_host_port(self):
+        self.manager.port = 4321
+        self.manager.compose("up", "--detach", "app")
+        self.assertIn("DREAMMAKER_HOST_PORT=4321", self.manager.events[0])
+
+    def test_invalid_host_port_is_rejected(self):
+        config_path = self.root / "deployment.json"
+        config = json.loads(config_path.read_text())
+        for invalid in (80, 65536, "3101", True):
+            config["host_port"] = invalid
+            config_path.write_text(json.dumps(config))
+            with self.assertRaises(Error):
+                Harness(self.root)
+
 
 if __name__ == "__main__":
     unittest.main()

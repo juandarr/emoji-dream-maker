@@ -16,7 +16,7 @@ services:
       ACCOUNT_DB_PATH: /data/accounts.sqlite
       YOUTUBE_CACHE_DIR: /cache/youtube
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${DREAMMAKER_HOST_PORT:-3101}:3000"
     volumes:
       - ${DREAMMAKER_DATA_DIR:-/var/lib/dreammaker/accounts}:/data
       - ${DREAMMAKER_CACHE_DIR:-/var/cache/dreammaker/youtube}:/cache
