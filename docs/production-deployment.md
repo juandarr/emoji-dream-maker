@@ -59,7 +59,7 @@ Do not enable timers until the first deployment, transferred data and public acc
 
 ## 2. Prepare Ubuntu
 
-First inspect the existing server; preserve its other services and Caddy sites:
+The initial SSH checks confirmed Ubuntu 24.04.4 amd64, Docker Engine 29.7.2, Compose 5.5.0 and Caddy 2.10.2. Caddy is active and port 3101 is free; skip the Docker installation block for this server. These commands also support repeating the checks on a replacement host:
 
 ```sh
 lsb_release -ds
@@ -289,3 +289,5 @@ node scripts/test-container.mjs dreammaker-ci:test
 ```
 
 The smoke test uses a disposable named volume, test account, port 4310 and synthetic secrets; it does not access the production database. It makes no paid provider calls. `scripts/account-check.mjs` reports integrity, table counts and migration versions without exposing records. `/api/health` returns only `{ok, revision}` with no-store caching, and 503 on failed database/auth readiness.
+
+Browser failures upload `browser-failure-report` with Playwright traces for seven days. The workflow uses the list reporter so the failing test is visible in the job log. Reproduce a failing file with `CI=true npm run test:e2e -- tests/e2e/FILE.spec.ts --reporter=list`. Pointer tests wait for real hover to pause moving targets; the agitation test sends rapid pointer events inside the browser to avoid protocol delays changing the gesture speed. Typography assertions load the bundled primary faces without requiring a platform-specific system fallback font. All browser tests remain required for publication.
