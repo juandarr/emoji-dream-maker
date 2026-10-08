@@ -1,0 +1,2 @@
+"use client";
+export default function ErrorPage({reset}:{reset:()=>void}){return <main style={{maxWidth:520,margin:"15vh auto",padding:32}}><h1>Your workspace could not be loaded</h1><p>Your saved data has not been replaced. Check the server connection and try again.</p><p lang="es">No se pudo cargar tu espacio. Tus datos guardados se conservan. Comprueba la conexión e inténtalo de nuevo.</p><button onClick={reset}>Retry / Reintentar</button></main>;}

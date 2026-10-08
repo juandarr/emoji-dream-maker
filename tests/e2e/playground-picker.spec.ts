@@ -1,4 +1,5 @@
-import {expect,test,type Page} from "@playwright/test";
+import { test, expect } from "./helpers/account";
+import {type Page} from "@playwright/test";
 async function open(page:Page){
   await page.route("**/api/generations",r=>r.fulfill({json:{configured:true,models:["test/text"]}}));
   await page.goto("/");await page.getByRole("button",{name:"Playground",exact:true}).click();

@@ -1,6 +1,7 @@
 import { restoreBoard } from "./helpers/playground-workspace";
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { test, expect } from "./helpers/account";
+import { type Page } from "@playwright/test";
 
 const board = {schemaVersion:1,title:"",intent:"",interpretation:"",edges:[],nodes:[
   {id:"heart",emojiId:"2764",glyph:"❤️",label:"red heart",meaning:"Love",note:"",role:"subject",x:45,y:45,scale:1,rotation:0},

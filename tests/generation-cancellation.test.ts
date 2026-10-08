@@ -1,13 +1,15 @@
+import { prepareAccountDatabase, closeAccountDatabase } from "./helpers/account-database";
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { emojiById } from '@/lib/catalog';
 import { createNode, emptyComposition } from '@/features/playground/model';
+vi.mock("@/features/account/server/http",async importOriginal=>({...await importOriginal<typeof import("@/features/account/server/http")>(),requireAccount:async()=>({id:"test-owner",name:"Test person",username:"test_owner",activated:true})}));
 const board={...emptyComposition(),nodes:[createNode(emojiById.get('2764')!,'en','heart',0)]};
 const settings={kind:'poem',locale:'en',tone:'gentle',model:'test/text'};
 const input=()=>({board,settings,requestId:crypto.randomUUID(),cancelToken:crypto.randomUUID()});
 const request=(body:unknown,method='POST',origin='http://localhost')=>new NextRequest('http://localhost/api/generations',{method,body:JSON.stringify(body),headers:{origin}});
-beforeEach(()=>{vi.resetModules();vi.stubEnv('OPENROUTER_API_KEY','test-secret');vi.stubEnv('OPENROUTER_MODELS','test/text');});
-afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();vi.unstubAllGlobals();});
+beforeEach(async()=>{await prepareAccountDatabase();vi.resetModules();vi.stubEnv('OPENROUTER_API_KEY','test-secret');vi.stubEnv('OPENROUTER_MODELS','test/text');});
+afterEach(()=>{closeAccountDatabase();vi.restoreAllMocks();vi.unstubAllEnvs();vi.unstubAllGlobals();});
 it('cancellation before submission prevents a provider call and forbids incorrect capabilities',async()=>{
   const adapter=await import('@/features/generation/server/openrouter');const generate=vi.spyOn(adapter.openRouterGenerator,'generate');const {DELETE,POST}=await import('@/app/api/generations/route');const data=input();
   expect((await DELETE(request(data,'DELETE','https://other.example'))).status).toBe(403);

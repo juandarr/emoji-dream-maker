@@ -1,5 +1,6 @@
 import { restoreBoard } from "./helpers/playground-workspace";
-import {expect,test,type Page} from "@playwright/test";
+import { test, expect } from "./helpers/account";
+import {type Page} from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 const board={schemaVersion:1,title:"",intent:"",interpretation:"",edges:[],nodes:[{id:"bear",emojiId:"1F9F8",glyph:"🧸",label:"Teddy bear",meaning:"A curious traveler",note:"",role:"subject",x:45,y:45,scale:1,rotation:0},{id:"moon",emojiId:"1F319",glyph:"🌙",label:"Moon",meaning:"An unfamiliar world",note:"",role:"setting",x:65,y:30,scale:1,rotation:0}]};
 async function open(page:Page){

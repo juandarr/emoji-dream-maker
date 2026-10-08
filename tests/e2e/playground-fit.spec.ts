@@ -1,5 +1,6 @@
 import { restoreBoard } from "./helpers/playground-workspace";
-import {expect,test,type Page} from '@playwright/test';
+import { test, expect } from "./helpers/account";
+import {type Page} from "@playwright/test";
 import {createRequire} from 'node:module';
 const {PNG}=createRequire(import.meta.url)('playwright-core/lib/utilsBundle') as {PNG:{sync:{read:(buffer:Buffer)=>{width:number;height:number;data:Buffer}}}};
 

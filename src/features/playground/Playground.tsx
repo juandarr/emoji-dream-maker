@@ -1,5 +1,8 @@
 "use client";
 
+import { useAccount } from "@/features/account/AccountWorkspace";
+import type { UndoReceipt } from "@/features/account/creation-repository";
+import { AccountRequestError, readResponse } from "@/features/account/client";
 import { useNotification } from "@/hooks/use-notification";
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
@@ -40,17 +43,20 @@ function MeaningField({value,onCommit,label}:{value:string;onCommit:(v:string)=>
 }
 export default function Playground({locale,seed,view="editor",onEdit,onSavedCount}:{locale:Locale;seed:Seed|null;view?:"editor"|"creations";onEdit?:()=>void;onSavedCount?:(count:number)=>void}) {
   const t=playgroundLabels[locale], s=storyLabels[locale], c=creationLabels[locale];
+  const account=useAccount();
   const data=useCreations();const {ready}=data;
   const dataRef=useRef(data);dataRef.current=data;
   const [readNotice,setReadNotice]=useNotification(false),[generationNotice,setGenerationNotice]=useNotification(false);
   useEffect(()=>{setReadNotice(data.error);},[data.error,setReadNotice]);
   const [readingRun,setReadingRun]=useState<GenerationRun|null>(null),[activeRun,setActiveRun]=useState<GenerationRun|null>(null),[resetVersion,setResetVersion]=useState(0),[fitVersion,setFitVersion]=useState(0);
   const [preview,setPreview]=useState<CreationState|null>(null),[pendingReplacement,setPendingReplacement]=useState<(()=>void)|null>(null),[replacementFailed,setReplacementFailed]=useState(false);
-  const [pendingRemoval,setPendingRemoval]=useState<{collection:Collection;records:CreationRecord[]}|null>(null),[removalError,setRemovalError]=useState(""),[deleted,setDeleted]=useNotification<{collection:Collection;records:CreationRecord[]}|null>(null);
+  const [pendingRemoval,setPendingRemoval]=useState<{collection:Collection;records:CreationRecord[]}|null>(null),[removalError,setRemovalError]=useState(""),[deleted,setDeleted]=useNotification<{collection:Collection;records:CreationRecord[];receipt:UndoReceipt}|null>(null);
   const [configurationChosen,setConfigurationChosen]=useState(false);const configurationEdited=useRef(false);
   const activeCheckpoint=useRef<CreationRecord|null>(null),editTimer=useRef<ReturnType<typeof setTimeout>|null>(null),editVersion=useRef(0);
   const [editingPending,setEditingPending]=useState(false);
-  type Job={run:GenerationRun;token:string;controller:AbortController;row?:CreationRecord;canceled:boolean;finished:boolean};
+  const [writeFailure,setWriteFailure]=useState<{message:string;retry:()=>Promise<unknown>;conflict?:boolean}|null>(null);
+  const editQueue=useRef<Promise<unknown>>(Promise.resolve());
+  type Job={run:GenerationRun;token:string;controller:AbortController;row?:CreationRecord;canceled:boolean;finished:boolean;persistencePending?:boolean};
   const jobRef=useRef<Job|null>(null);
   const [history,dispatch]=useReducer(boardReducer,{past:[],present:emptyComposition(),future:[]});
   const board=history.present;
@@ -58,7 +64,7 @@ export default function Playground({locale,seed,view="editor",onEdit,onSavedCoun
   const [pickerState,setPickerState]=useState(initialPickerState);
   const [target,setTarget]=useState(""),[relation,setRelation]=useState(""),[dragging,setDragging]=useState<string|null>(null),[notice,setNotice]=useNotification("");
   const [busy,setBusy]=useState(false),[config,setConfig]=useState<GenerationConfig|null>(null),[configFailed,setConfigFailed]=useState(false);
-  const [reasoningEffort,setReasoningEffort]=useState<ReasoningEffort>("default"),[pendingResultId,setPendingResultId]=useState<string|null>(null);
+  const [reasoningEffort,setReasoningEffort]=useState<ReasoningEffort>(account.playground?.reasoningEffort||"default"),[pendingResultId,setPendingResultId]=useState<string|null>(null);
   useEffect(()=>{setGenerationNotice(busy);},[busy,setGenerationNotice]);
   const [pickerOpen,setPickerOpen]=useState(false);
   const clipboardRef=useRef<SelectionClipboard|null>(null),pasteCount=useRef(0),cursorRef=useRef<Point|null>(null),dragPointRef=useRef<Point|null>(null);
@@ -66,8 +72,8 @@ export default function Playground({locale,seed,view="editor",onEdit,onSavedCoun
   const latestBoard=useRef(board);latestBoard.current=board;
   const geometryRef=useRef<CanvasGeometry>({camera:{x:0,y:0,zoom:1},width:600,height:500});
   const resultsRef=useRef<HTMLElement|null>(null);
-  const [kind,setKind]=useState<OutputKind>("interpretation"),[model,setModel]=useState("");
-  const [outputLocale,setOutputLocale]=useState<Locale>(locale),[tone,setTone]=useState(t.toneDefault);
+  const [kind,setKind]=useState<OutputKind>(account.playground?.kind||"interpretation"),[model,setModel]=useState(account.playground?.model||"");
+  const [outputLocale,setOutputLocale]=useState<Locale>(account.playground?.locale||locale),[tone,setTone]=useState(account.playground?.tone||t.toneDefault);
   const boardRef=useRef<HTMLDivElement|null>(null),consumedSeed=useRef(""),busyRef=useRef(false);
   const sensors=useSensors(useSensor(MouseSensor,{activationConstraint:{distance:6}}),useSensor(TouchSensor,{activationConstraint:{delay:200,tolerance:8}}),useSensor(KeyboardSensor));
   const authoredContext=!!(board.title||board.intent||board.interpretation||board.edges.length||board.nodes.some(n=>n.customMeaning||n.note||n.role!=="subject"));
@@ -76,12 +82,12 @@ export default function Playground({locale,seed,view="editor",onEdit,onSavedCoun
   const currentState:CreationState={schemaVersion:1,id:"editor",createdAt:0,board,settings:configurationActive?settings:null,run:activeRun};
   const saved=isStateSaved(currentState,data.saved);
   useEffect(()=>{onSavedCount?.(groupCreations(data.saved).length);},[data.saved,onSavedCount]);
-  useEffect(()=>()=>{if(editTimer.current)clearTimeout(editTimer.current);const job=jobRef.current;if(job&&!job.finished){job.canceled=true;job.controller.abort();void fetch("/api/generations",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:job.run.id,cancelToken:job.token}),keepalive:true}).catch(()=>{});}},[]);
+  useEffect(()=>()=>{if(editTimer.current)clearTimeout(editTimer.current);},[]);
   const checkConnection=useCallback(async()=>{
     setConfig(null);setConfigFailed(false);
-    try {const response=await fetch("/api/generations",{signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error();const next:GenerationConfig=await response.json();if(!Array.isArray(next.models))throw new Error();setConfig(next);setReasoningEffort(current=>configurationEdited.current?current:next.reasoningEffort||"default");setModel(current=>configurationEdited.current?current:current||next.models[0]||"");}
+    try {const response=await account.request("/api/generations",{signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error();const next:GenerationConfig=await response.json();if(!Array.isArray(next.models))throw new Error();setConfig(next);setReasoningEffort(current=>configurationEdited.current||account.playground?current:next.reasoningEffort||"default");setModel(current=>configurationEdited.current||account.playground?current:current||next.models[0]||"");}
     catch {setConfigFailed(true);}
-  },[]);
+  },[account.request]);
   useEffect(()=>{void checkConnection();},[checkConnection]);
   useEffect(()=>{
     if(!pendingResultId || !(activeRun?.id===pendingResultId&&activeRun.status!=="running"))return;
@@ -110,7 +116,7 @@ export default function Playground({locale,seed,view="editor",onEdit,onSavedCoun
   const selectedNodes=board.nodes.filter(n=>selectedIds.includes(n.id));
   const selected=selectedNodes.length===1?selectedNodes[0]:undefined;
   const displayBrief=compileBrief(board,locale);
-  useEffect(()=>{setNotice("");setCanvasNotice("");if(!configurationEdited.current){setOutputLocale(locale);setTone(playgroundLabels[locale].toneDefault);}},[locale]);
+  useEffect(()=>{setNotice("");setCanvasNotice("");if(!configurationEdited.current){setOutputLocale(account.playground?.locale||locale);setTone(account.playground?.tone||playgroundLabels[locale].toneDefault);}},[locale,account.playground?.locale,account.playground?.tone]);
   function rememberSelection(){
     const g=geometryRef.current,clip=copySelection(board,selectedIds,{width:g.width,height:g.height});
     if(clip){clipboardRef.current=clip;pasteCount.current=0;setCanPaste(true);setCanvasNotice(clip.nodes.length===1?t.selectionCopiedOne:t.selectionCopied.replace("{count}",String(clip.nodes.length)));}
@@ -168,14 +174,21 @@ export default function Playground({locale,seed,view="editor",onEdit,onSavedCoun
     }
   }
   async function copy(text:string) {try{await navigator.clipboard.writeText(text);setNotice(t.copied);return true;}catch{setNotice(t.copyFailed);return false;}}
+  async function ensureGenerationPersisted(){
+    const job=jobRef.current;if(!job?.persistencePending)return;
+    const outcome=await readResponse<{run?:GenerationRun}>(await account.request("/api/generations",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:job.run.id,cancelToken:job.token})}));
+    job.persistencePending=false;
+    if(outcome.run)setActiveRun(current=>current?.id===outcome.run!.id?{...outcome.run!,...(current.result?{result:current.result}:{})}:current);
+    const latest=await dataRef.current.refresh();activeCheckpoint.current=latest?.temporary.find(row=>row.state.run?.id===job.run.id)||null;setWriteFailure(null);
+  }
   async function saveCreation(state:CreationState=currentState) {
     if(!canSaveState(state))return false;
-    try {await data.put("saved",saveableState(makeState(state.board,state.settings,state.run)));setNotice(c.saveDone);return true;}
-    catch {setNotice(c.saveFailed);return false;}
+    try {await ensureGenerationPersisted();await data.put("saved",saveableState(makeState(state.board,state.settings,state.run)));setNotice(c.saveDone);setWriteFailure(null);return true;}
+    catch {setNotice(c.saveFailed);setWriteFailure({message:c.saveFailed,retry:()=>saveCreation(state)});return false;}
   }
   async function keepCreation() {
     if(!containsWork(currentState))return;
-    try{const row=await data.put("temporary",makeState(board,currentState.settings,activeRun));activeCheckpoint.current=row;setNotice(c.kept);}catch(error){setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed);}
+    try{await ensureGenerationPersisted();const canonicalRun=activeRun?.status==="running"?dataRef.current.temporary.find(row=>row.state.run?.id===activeRun.id)?.state.run||activeRun:activeRun;const row=await data.put("temporary",makeState(board,currentState.settings,canonicalRun));activeCheckpoint.current=row;setNotice(c.kept);setWriteFailure(null);}catch(error){setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed);setWriteFailure({message:error instanceof CreationConflict?c.conflict:c.saveFailed,retry:keepCreation});}
   }
   function requestReplacement(action:()=>void) {
     if(busyRef.current){setNotice(c.wait);return;}
@@ -186,55 +199,76 @@ export default function Playground({locale,seed,view="editor",onEdit,onSavedCoun
     requestReplacement(()=>{const next=restoreState(currentState,source,parts,locale);if(parts.canvas)dispatch({type:"load",board:next.state.board});else if(parts.configuration)dispatch({type:"replace",board:next.state.board});
       setConfigurationChosen(!!next.state.settings);configurationEdited.current=!!next.state.settings;
       if(next.state.settings){setOutputLocale(next.state.settings.locale);setTone(next.state.settings.tone);setKind(next.state.settings.kind);setModel(next.state.settings.model);setReasoningEffort(next.state.settings.reasoningEffort||"default");}
-      else {setOutputLocale(locale);setTone(t.toneDefault);setKind("interpretation");setModel(config?.models[0]||"");setReasoningEffort(config?.reasoningEffort||"default");}
-      setActiveRun(next.state.run?structuredClone(next.state.run):null);activeCheckpoint.current=dataRef.current.temporary.find(r=>r.state.id===source.id)||null;
+      else {inactiveDefaults();}
+      setActiveRun(next.state.run?structuredClone(next.state.run):null);activeCheckpoint.current=dataRef.current.temporary.find(r=>r.state.id===source.id&&r.state.run?.id===next.state.run?.id)||dataRef.current.temporary.find(r=>r.state.run?.id&&r.state.run.id===next.state.run?.id)||null;
       if(parts.canvas){setSelectedIds([]);setPickerOpen(false);setResetVersion(v=>v+1);setFitVersion(v=>v+1);}setTarget("");setRelation("");setCanvasNotice("");
       setNotice(next.partialContext?c.portable:c.restoreDone);onEdit?.();
     });
   }
   async function removeRecords(collection:Collection,records:CreationRecord[]) {
-    try {await data.remove(collection,records);setDeleted({collection,records});setPendingRemoval(null);setNotice("");}
-    catch(error){const message=error instanceof CreationConflict?c.conflict:c.saveFailed;setNotice(message);setRemovalError(message);}
+    try {const receipt=await data.remove(collection,records);setDeleted({collection,records,receipt});setPendingRemoval(null);setWriteFailure(null);setNotice("");}
+    catch(error){const message=error instanceof CreationConflict?c.conflict:c.saveFailed;setNotice(message);setRemovalError(message);setWriteFailure({message,conflict:error instanceof CreationConflict,retry:async()=>{const latest=await dataRef.current.refresh();if(!latest)return;const current=latest[collection].filter(row=>records.some(previous=>previous.key===row.key));if(current.length){await removeRecords(collection,current);}else{setWriteFailure(null);}}});}
   }
   function askRemove(collection:Collection,records:CreationRecord[]) {
     if(!records.length)return;setRemovalError("");if(records.length>1)setPendingRemoval({collection,records});else void removeRecords(collection,records);
   }
-  async function undoDelete(){if(!deleted)return;try{for(const row of deleted.records)await data.put(deleted.collection,row.state);setDeleted(null);}catch(error){setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed);}}
+  async function undoDelete(){if(!deleted)return;try{await data.undo(deleted.receipt);setDeleted(null);}catch(error){setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed);}}
   async function finishRun(job:Job,finished:GenerationRun){
     if(job.finished)return;job.finished=true;
     setActiveRun(current=>current?.id===finished.id?finished:current);
-    setDeleted(current=>current?{...current,records:current.records.map(row=>row.state.run?.id===finished.id?{...row,state:{...row.state,run:finished}}:row)}:null);
-    if(job.row&&dataRef.current.temporary.some(row=>row.key===job.row!.key)){try{const row=await dataRef.current.put("temporary",{...job.row.state,run:finished},job.row.revision);if(activeCheckpoint.current?.key===job.row.key)activeCheckpoint.current=row;}catch(error){setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed);}}
+    const next=await dataRef.current.refresh();activeCheckpoint.current=next?.temporary.find(row=>row.state.run?.id===finished.id)||null;
   }
   async function generate() {
-    if(busyRef.current||!board.nodes.length||!config?.configured||!config.models.includes(model))return;
+    if(!ready||data.error||busyRef.current||jobRef.current?.persistencePending||!board.nodes.length||!config?.configured||!config.models.includes(model))return;
     configurationEdited.current=true;setConfigurationChosen(true);busyRef.current=true;setBusy(true);
     const run:GenerationRun={id:crypto.randomUUID(),createdAt:Date.now(),identity:semanticIdentity(board,settings.locale),board:structuredClone(board),brief:compileBrief(board,settings.locale),settings:{...settings},status:"running"};
     const job:Job={run,token:crypto.randomUUID(),controller:new AbortController(),canceled:false,finished:false};jobRef.current=job;
     setActiveRun(run);setPendingResultId(run.id);
     try {
-      try{job.row=await data.put("temporary",makeState(run.board,run.settings,run));activeCheckpoint.current=job.row;}catch(error){setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed);}
+      activeCheckpoint.current=null;
       if(job.canceled){await finishRun(job,{...run,status:"canceled",errorCode:"canceled"});return;}
-      const response=await fetch("/api/generations",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:run.id,cancelToken:job.token,board:run.board,settings:run.settings}),signal:AbortSignal.any([job.controller.signal,AbortSignal.timeout(135000)])});
+      const response=await account.request("/api/generations",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:run.id,cancelToken:job.token,board:run.board,settings:run.settings}),signal:AbortSignal.any([job.controller.signal,AbortSignal.timeout(135000)])});
       const result=await response.json();if(job.canceled)return;
-      await finishRun(job,response.ok&&result.result?{...run,status:"succeeded",result:result.result}:{...run,status:result.code==="canceled"?"canceled":result.code==="unknown"||result.code==="unreadable"?"unknown":"failed",error:result.error||t.failedRun,errorCode:typeof result.code==="string"?result.code:undefined});
+      if(result.persistencePending){job.persistencePending=true;setWriteFailure({message:c.saveFailed,retry:ensureGenerationPersisted});}
+      await finishRun(job,result.run?result.run:response.ok&&result.result?{...run,status:"succeeded",result:result.result}:{...run,status:result.code==="canceled"?"canceled":result.code==="unknown"||result.code==="unreadable"?"unknown":"failed",error:result.error||t.failedRun,errorCode:typeof result.code==="string"?result.code:undefined});
     }catch{if(!job.canceled)await finishRun(job,{...run,status:"unknown",error:t.unknown,errorCode:"unknown"});}
     finally{if(jobRef.current===job){busyRef.current=false;setBusy(false);}}
   }
   function cancelGeneration(){const job=jobRef.current;if(!job||job.finished)return;job.canceled=true;job.controller.abort();busyRef.current=false;setBusy(false);setPendingResultId(null);setNotice(c.cancelled);
     setActiveRun(current=>current?.id===job.run.id?{...job.run,status:"canceled",errorCode:"canceled"}:current);
-    if(job.row)void finishRun(job,{...job.run,status:"canceled",errorCode:"canceled"});
-    void fetch("/api/generations",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:job.run.id,cancelToken:job.token}),signal:AbortSignal.timeout(8000)}).catch(()=>{});
+    job.finished=true;
+    const deliver=async()=>{const outcome=await readResponse<{run?:GenerationRun}>(await account.request("/api/generations",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:job.run.id,cancelToken:job.token}),signal:AbortSignal.timeout(8000)}));if(outcome.run)setActiveRun(current=>current?.id===job.run.id?outcome.run!:current);await dataRef.current.refresh();setWriteFailure(null);};
+    void deliver().catch(()=>{setNotice(c.saveFailed);setWriteFailure({message:c.saveFailed,retry:deliver});});
   }
-  function resetCanvas(){requestReplacement(()=>{dispatch({type:"load",board:emptyComposition()});setSelectedIds([]);setPickerOpen(false);setCanvasNotice("");setActiveRun(null);activeCheckpoint.current=null;setReadingRun(null);setPendingResultId(null);setTarget("");setRelation("");setNotice("");setConfigurationChosen(false);configurationEdited.current=false;setOutputLocale(locale);setTone(t.toneDefault);setKind("interpretation");setModel(config?.models[0]||"");setReasoningEffort(config?.reasoningEffort||"default");setResetVersion(version=>version+1);boardRef.current?.focus({preventScroll:true});});}
-  function clearConfiguration(){dispatch({type:"replace",board:restoreState(currentState,{...currentState,settings:null,run:null},{canvas:false,configuration:true,result:false},locale).state.board});setConfigurationChosen(false);configurationEdited.current=false;setOutputLocale(locale);setTone(t.toneDefault);setKind("interpretation");setModel(config?.models[0]||"");setReasoningEffort(config?.reasoningEffort||"default");}
+  useEffect(()=>{const job=jobRef.current;if(!busy||!job||job.finished)return;const authoritative=data.temporary.find(row=>row.state.run?.id===job.run.id)?.state.run;if(authoritative&&authoritative.createdAt!==job.run.createdAt){job.run=authoritative;setActiveRun(current=>current?.id===authoritative.id&&current.status==="running"?authoritative:current);}},[busy,data.temporary]);
+  useEffect(()=>{if(!busy)return;const timer=setInterval(()=>void dataRef.current.refresh(),500);return()=>clearInterval(timer);},[busy]);
+  useEffect(()=>account.registerProtection(next=>{setReplacementFailed(false);if(containsWork(currentState)&&!saved)setPendingReplacement(()=>next);else next();},async()=>{
+    const job=jobRef.current;if(!job||job.finished)return;job.canceled=true;job.controller.abort();
+    await account.request("/api/generations",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({requestId:job.run.id,cancelToken:job.token}),signal:AbortSignal.timeout(8000)});
+  }));
+  function chooseSettings(patch:Partial<GenerationSettings>){configurationEdited.current=true;setConfigurationChosen(true);const next={...settings,...patch};setOutputLocale(next.locale);setKind(next.kind);setModel(next.model);setReasoningEffort(next.reasoningEffort||"default");account.setPlayground(next);}
+  function inactiveDefaults(){setOutputLocale(account.playground?.locale||locale);setTone(account.playground?.tone||t.toneDefault);setKind(account.playground?.kind||"interpretation");setModel(account.playground?.model||config?.models[0]||"");setReasoningEffort(account.playground?.reasoningEffort||config?.reasoningEffort||"default");}
+  function resetCanvas(){requestReplacement(()=>{dispatch({type:"load",board:emptyComposition()});setSelectedIds([]);setPickerOpen(false);setCanvasNotice("");setActiveRun(null);activeCheckpoint.current=null;setReadingRun(null);setPendingResultId(null);setTarget("");setRelation("");setNotice("");setConfigurationChosen(false);configurationEdited.current=false;inactiveDefaults();setResetVersion(version=>version+1);boardRef.current?.focus({preventScroll:true});});}
+  function clearConfiguration(){dispatch({type:"replace",board:restoreState(currentState,{...currentState,settings:null,run:null},{canvas:false,configuration:true,result:false},locale).state.board});setConfigurationChosen(false);configurationEdited.current=false;inactiveDefaults();}
   // Canvas nodes move directly; the tray needs a preview to cross its scroll boundary.
   const dragGlyph=dragging?.startsWith("tray:")?emojiById.get(dragging.slice(5))?.glyph:undefined;
   const latestRun=activeRun;
+  async function persistResultEdit(id:string,text:string,reapply=false){
+    const latest=reapply?await dataRef.current.refresh():null;
+    const checkpoint=activeCheckpoint.current;
+    const row=reapply?(checkpoint?.state.run?.id===id?latest?.temporary.find(row=>row.key===checkpoint.key):latest?.temporary.find(row=>row.state.run?.id===id)):checkpoint?.state.run?.id===id?checkpoint:dataRef.current.temporary.find(row=>row.state.run?.id===id);
+    if(!row?.state.run?.result){setNotice(c.conflict);return;}
+    try{const updated=await dataRef.current.put("temporary",{...row.state,run:{...row.state.run,result:{...row.state.run.result,text}}},row.revision);activeCheckpoint.current=updated;setWriteFailure(null);}
+    catch(error){setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed);setWriteFailure({message:error instanceof CreationConflict?c.conflict:c.saveFailed,conflict:error instanceof CreationConflict,retry:()=>persistResultEdit(id,text,true)});}
+  }
   function editResult(id:string,text:string){
     const run=activeRun?.id===id?activeRun:readingRun;if(!run?.result)return;const next={...run,result:{...run.result,text}};
     if(activeRun?.id===id)setActiveRun(next);if(readingRun?.id===id)setReadingRun(next);
-    const row=activeCheckpoint.current;if(row?.state.run?.id===id){if(editTimer.current)clearTimeout(editTimer.current);const version=++editVersion.current;setEditingPending(true);editTimer.current=setTimeout(()=>{void dataRef.current.put("temporary",{...row.state,run:next},row.revision).then(updated=>{if(activeCheckpoint.current?.key===row.key)activeCheckpoint.current=updated;},error=>setNotice(error instanceof CreationConflict?c.conflict:c.saveFailed)).finally(()=>{if(version===editVersion.current)setEditingPending(false);});},500);}
+    if(dataRef.current.temporary.some(row=>row.state.run?.id===id)){
+      if(activeCheckpoint.current?.state.run?.id!==id)activeCheckpoint.current=dataRef.current.temporary.find(row=>row.state.run?.id===id)||null;
+      if(editTimer.current)clearTimeout(editTimer.current);const version=++editVersion.current;setEditingPending(true);
+      editTimer.current=setTimeout(()=>{editQueue.current=editQueue.current.then(()=>persistResultEdit(id,text)).finally(()=>{if(version===editVersion.current)setEditingPending(false);});},500);
+    }
   }
   function resultContent(run:GenerationRun){return <><StoryContent key={run.id} run={run} locale={locale} outputName={outputNames[run.settings.kind]} stale={!resultMatches(board,currentState.settings,run)} onEdit={text=>editResult(run.id,text)} onCopy={text=>copy(text)}/></>;}
   const outputNames:Record<OutputKind,string>={interpretation:t.interpretOutput,message:t.message,poem:t.poem,story:t.story,lyrics:t.lyrics,"image-prompt":t.imagePrompt,storyboard:t.storyboard};
@@ -243,17 +277,18 @@ export default function Playground({locale,seed,view="editor",onEdit,onSavedCoun
           {!!board.edges.length&&<div className="pg-relationships"><h3>{t.connections}</h3>{board.edges.map(e=><div key={e.id}><span>{board.nodes.find(n=>n.id===e.source)?.glyph} {e.label} → {board.nodes.find(n=>n.id===e.target)?.glyph}</span><button aria-label={`${t.remove} ${e.label}`} onClick={()=>dispatch({type:"removeEdge",id:e.id})}><X size={14}/></button></div>)}</div>}</div>;
   if(!ready)return <div className="pg-loading" role="status">{t.loading}</div>;
   return <section className={`playground ${dragging?"is-dragging":""}`} aria-label={t.name}>
+    {(writeFailure||data.error)&&<div className="account-save-status" role="status"><span>{writeFailure?.message||c.readFailed}</span><button onClick={()=>{if(writeFailure)void writeFailure.retry().catch(()=>setNotice(c.saveFailed));else void data.refresh();}}>{writeFailure?.conflict?(locale==="es"?"Aplicar mis cambios":"Reapply my changes"):c.retry}</button>{writeFailure?.conflict&&<button onClick={()=>{void data.refresh();setWriteFailure(null);}}>{locale==="es"?"Cargar historial actual":"Reload history"}</button>}</div>}
     {(notice||readNotice)&&<div className="storage-notice" role="status"><span>{readNotice?c.readFailed:notice}</span>{readNotice&&<button onClick={()=>{setReadNotice(true);void data.refresh();}}>{c.retry}</button>}<button aria-label={t.closeNotice} onClick={()=>{setNotice("");setReadNotice(false);}}><X size={16}/></button></div>}
     {view==="creations"&&busy&&generationNotice&&<div className="storage-notice" role="status"><span>{c.running}</span><button onClick={cancelGeneration}>{c.cancelGeneration}</button></div>}
     <div hidden={view!=="creations"}><SavedCreations records={data.saved} locale={locale} outputNames={outputNames} busy={busy} onRestore={restoreCreation} onRemove={records=>askRemove("saved",records)} onCopy={copy} onBack={()=>onEdit?.()}/>{deleted?.collection==="saved"&&<div className="storage-notice" role="status"><span>{c.removed}</span><button onClick={()=>void undoDelete()}>{c.undo}</button></div>}</div>
     <div hidden={view!=="editor"}>
-    <div className="cr-actions"><span className={`cr-action-status ${saved?"":"unsaved"}`}>{saved?<BookmarkCheck size={15}/>:<Bookmark size={15}/>} {saved?c.saved:c.unsaved}</span><div className="cr-action-buttons"><button disabled={!containsWork(currentState)||data.writing} onClick={()=>void keepCreation()}><History size={15}/>{c.keep}</button><button className="cr-save" disabled={!canSaveState(currentState)||data.writing} onClick={()=>void saveCreation()}><Bookmark size={15}/>{c.save}</button><button disabled={busy} onClick={resetCanvas}><Plus size={15}/>{c.new}</button></div></div>
+    <div className="cr-actions"><span className={`cr-action-status ${saved?"":"unsaved"}`}>{saved?<BookmarkCheck size={15}/>:<Bookmark size={15}/>} {saved?c.saved:c.unsaved}</span><div className="cr-action-buttons"><button disabled={!ready||data.error||busy&&!data.temporary.some(row=>row.state.run?.id===activeRun?.id)||!containsWork(currentState)||data.writing} onClick={()=>void keepCreation()}><History size={15}/>{c.keep}</button><button className="cr-save" disabled={!ready||data.error||!canSaveState(currentState)||data.writing} onClick={()=>void saveCreation()}><Bookmark size={15}/>{c.save}</button><button disabled={busy} onClick={resetCanvas}><Plus size={15}/>{c.new}</button></div></div>
     <CreationHeader
       locale={locale} board={board} interpretation={displayBrief.interpretation}
-      outputLocale={outputLocale} onOutputLocale={value=>{configurationEdited.current=true;setConfigurationChosen(true);setOutputLocale(value);}}
-      kind={kind} onKind={value=>{configurationEdited.current=true;setConfigurationChosen(true);setKind(value);}} outputNames={outputNames}
-      model={model} onModel={value=>{configurationEdited.current=true;setConfigurationChosen(true);setModel(value);}} reasoningEffort={reasoningEffort} onReasoning={value=>{configurationEdited.current=true;setConfigurationChosen(true);setReasoningEffort(value);}}
-      config={config} configFailed={configFailed} onCheck={()=>void checkConnection()}
+      outputLocale={outputLocale} onOutputLocale={value=>chooseSettings({locale:value})}
+      kind={kind} onKind={value=>chooseSettings({kind:value})} outputNames={outputNames}
+      model={model} onModel={value=>chooseSettings({model:value})} reasoningEffort={reasoningEffort} onReasoning={value=>chooseSettings({reasoningEffort:value})}
+      generationDisabled={!ready||data.error||!!jobRef.current?.persistencePending} config={config} configFailed={configFailed} onCheck={()=>void checkConnection()}
       busy={busy} status={busy?t.generating:latestRun?.status==="succeeded"?t.generated:""}
       error={latestRun&&(latestRun.status==="failed"||latestRun.status==="unknown"||latestRun.status==="canceled")?generationErrorMessage(latestRun,locale):undefined}
       onGenerate={()=>void generate()} onFields={patch=>dispatch({type:"fields",patch})}

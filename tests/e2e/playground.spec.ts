@@ -1,5 +1,6 @@
 import { savedBoard, restoreBoard } from "./helpers/playground-workspace";
-import { expect, test, type Page } from "@playwright/test";
+import { test, expect } from "./helpers/account";
+import { type Page } from "@playwright/test";
 import {readFileSync} from "node:fs";
 import {createRequire} from "node:module";
 const enData=JSON.parse(readFileSync(createRequire(import.meta.url).resolve("emojibase-data/en/compact.json"),"utf8")) as {group?:number;unicode:string;skins?:{unicode:string}[]}[];
@@ -98,8 +99,8 @@ test("a delayed generation completes while another tab is active",async({page})=
 });
 
 test("storage failure keeps the editor and blocks Save and continue",async({page})=>{
-  await page.addInitScript(()=>{Object.defineProperty(window,"indexedDB",{get:()=>{throw new Error("Unavailable");}});});
-  await open(page);await expect(page.getByText(/Could not open your creation history/).first()).toBeVisible();
+  await page.route("**/api/account/creations",route=>route.request().method()==="PUT"?route.fulfill({status:503,json:{code:"storage"}}):route.fallback());
+  await open(page);
   await add(page,"red heart","red heart");
   await page.getByRole("button",{name:"New canvas",exact:true}).click();
   const dialog=page.getByRole("dialog",{name:"Keep your current creation?",exact:true});

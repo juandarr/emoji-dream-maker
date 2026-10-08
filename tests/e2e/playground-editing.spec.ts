@@ -1,5 +1,6 @@
 import { savedBoard, restoreBoard } from "./helpers/playground-workspace";
-import {expect,test,type Page} from "@playwright/test";
+import { test, expect } from "./helpers/account";
+import {type Page} from "@playwright/test";
 
 const fixture={schemaVersion:1,title:"A small scene",intent:"",interpretation:"",nodes:[
  {id:"moon",emojiId:"1F319",glyph:"🌙",label:"Moon",meaning:"Moon",note:"Night",role:"setting",x:25,y:32,scale:1.5,rotation:15},

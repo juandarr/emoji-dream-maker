@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { test, expect } from "./helpers/account";
 import type { Page } from "@playwright/test";
 async function clickEmoji(page:Page,label:string){
   await expect(page.locator(".language-picker select")).toBeEnabled();
@@ -585,7 +585,7 @@ test("artwork supports pointer-centered wheel zoom, maximum double-click zoom an
   await expect(popup.locator(".image-zoom-level")).toHaveText("100%");
 });
 
-async function stubKeyboardVideo(page: Page, delay = 0, embed = "<p>Keyboard lesson</p>") {
+async function stubKeyboardVideo(page: Page, delay = 0, embed = "<p>Keyboard lesson</p>", unavailableAPI=false) {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.route("**/api/discover", async route => {
     if (route.request().postDataJSON().provider !== "youtube") return route.fallback();
@@ -593,6 +593,7 @@ async function stubKeyboardVideo(page: Page, delay = 0, embed = "<p>Keyboard les
   });
   await page.route("https://www.youtube-nocookie.com/embed/keys**", route => route.fulfill({ contentType: "text/html", body: embed }));
   await page.route("https://www.youtube.com/iframe_api", async route => {
+    if(unavailableAPI)return route.abort();
     if (delay) await new Promise(resolve => setTimeout(resolve, delay));
     await route.fulfill({ contentType: "text/javascript", body: `
       window.testPlayer = { state: 1, calls: [], time: 30, duration: 120, seeks: [], volume: 50, muted: false };
@@ -835,4 +836,14 @@ test("starting a sound pauses the other sound and failed previews can retry", as
   await card.getByRole("button",{name:"Try again",exact:true}).click();
   await expect(card.locator("audio")).toHaveAttribute("data-retried","true");
   await expect(card.getByRole("button",{name:"Try again",exact:true})).toHaveCount(0);
+});
+
+
+test('portal close-button highlight is square and centers the X equally in every theme',async({page})=>{
+  for(const theme of ['classic','cyberpunk','solarpunk','retro']){
+    await page.getByLabel('Themes',{exact:true}).selectOption(theme);await page.getByRole('textbox',{name:/Search a word/}).fill('octopus');await clickEmoji(page,'octopus');await page.getByRole('button',{name:'Open portal',exact:true}).first().click();
+    const close=page.locator('.gallery-top').getByRole('button',{name:'Close gallery',exact:true});await close.hover();
+    const bounds=await close.boundingBox(),glyph=await close.locator('svg').boundingBox();expect(bounds!.width).toBe(bounds!.height);expect(glyph!.x-bounds!.x).toBeCloseTo(bounds!.x+bounds!.width-glyph!.x-glyph!.width,1);expect(glyph!.y-bounds!.y).toBeCloseTo(bounds!.y+bounds!.height-glyph!.y-glyph!.height,1);
+    await close.click();
+  }
 });
