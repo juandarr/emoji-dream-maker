@@ -11,7 +11,11 @@ async function hoverEmoji(emoji:Locator){
 async function clickEmoji(page:Page,label:string){
   await expect(page.locator(".language-picker select")).toBeEnabled();
   const emoji=page.getByLabel(label,{exact:true});
-  await hoverEmoji(emoji);
+  // Media tests need a stable selection; focus pauses the orbit through the
+  // app's accessible keyboard path. Hover/drag behavior has dedicated tests.
+  await page.keyboard.press("Tab");
+  await emoji.focus();
+  await expect.poll(()=>emoji.evaluate(el=>el.matches(":focus-visible"))).toBe(true);
   await emoji.click();
 }
 async function stubSources(page:Page){
@@ -862,5 +866,6 @@ test('portal close-button highlight is square and centers the X equally in every
     const close=page.locator('.gallery-top').getByRole('button',{name:'Close gallery',exact:true});await close.hover();
     const bounds=await close.boundingBox(),glyph=await close.locator('svg').boundingBox();expect(bounds!.width).toBe(bounds!.height);expect(glyph!.x-bounds!.x).toBeCloseTo(bounds!.x+bounds!.width-glyph!.x-glyph!.width,1);expect(glyph!.y-bounds!.y).toBeCloseTo(bounds!.y+bounds!.height-glyph!.y-glyph!.height,1);
     await close.click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
   }
 });
