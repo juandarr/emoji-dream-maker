@@ -346,6 +346,13 @@ class RecoveryTests(unittest.TestCase):
         with patch.object(module.socket, "create_connection", side_effect=OSError("connection refused")), self.assertRaises(Error):
             module.Manager.require_maintenance(self.manager)
 
+    def test_failed_commands_do_not_echo_private_env_file_contents(self):
+        failure = module.subprocess.CalledProcessError(1, ["docker", "run"], stderr="Malformed BETTER_AUTH_SECRET=private-value")
+        with patch.object(module.subprocess, "run", side_effect=failure), self.assertRaises(Error) as result:
+            module.Manager.command(self.manager, "docker", "run", "--env-file", "app.env")
+        self.assertNotIn("private-value", str(result.exception))
+        self.assertIn("exited 1", str(result.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

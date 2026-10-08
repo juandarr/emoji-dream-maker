@@ -34,8 +34,6 @@ jobs:
       - run: npm test -- --maxWorkers=1
       - name: Deployment controller failure and recovery checks
         run: python3 -m unittest discover -s tests/deployment -v
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
       - name: Restore generated TypeScript config before packaging source
         run: git restore -- tsconfig.json
       - name: Build the production image
@@ -68,6 +66,24 @@ jobs:
           path: /tmp/dreammaker-image.tar
           compression-level: 0
           retention-days: 2
+
+  browser:
+    name: Chromium application checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
@@ -80,13 +96,14 @@ jobs:
   ci:
     name: CI
     runs-on: ubuntu-24.04
-    needs: verify
+    needs: [verify, browser]
     if: always()
     steps:
       - name: Require all verification checks
         env:
-          RESULT: ${{ needs.verify.result }}
-        run: test "$RESULT" = success
+          VALIDATION: ${{ needs.verify.result }}
+          BROWSER: ${{ needs.browser.result }}
+        run: test "$VALIDATION" = success && test "$BROWSER" = success
 
   publish:
     name: Publish tested main image

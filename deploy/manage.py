@@ -116,11 +116,10 @@ class Manager:
             result = subprocess.run(arguments, check=True, capture_output=True, text=True, timeout=timeout)
             return result.stdout.strip()
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
-            # Do not print Docker inspect output, environment contents, or credentials.
-            detail = (getattr(error, "stderr", "") or "")
-            if isinstance(detail, bytes):
-                detail = detail.decode(errors="replace")
-            raise DeploymentError(f"Command {arguments[0]} {arguments[1] if len(arguments)>1 else ''} failed: {detail[-1500:]}") from error
+            # Docker may echo a malformed env-file line in stderr. Keep raw
+            # subprocess diagnostics out of journal logs, including on failure.
+            reason = "timed out" if isinstance(error, subprocess.TimeoutExpired) else f"exited {error.returncode}"
+            raise DeploymentError(f"Command {arguments[0]} {arguments[1] if len(arguments)>1 else ''} {reason}; inspect host/container diagnostics privately") from error
 
     def compose(self, *arguments):
         environment = [f"DREAMMAKER_ROOT={self.root}", f"DREAMMAKER_DATA_DIR={self.data}", f"DREAMMAKER_CACHE_DIR={self.cache}"]

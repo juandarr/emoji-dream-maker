@@ -19,7 +19,7 @@ flowchart LR
 
 `.github/workflows/ci.yml` runs on PRs, pushes to `main`, and manual dispatch. PRs never publish. The `CI` job is the required branch check. Verification covers Chromium UI tests, real authentication and SQLite in the production container, assets, yt-dlp, persistence across restart, and restoring an online backup. Controller tests exercise failed backups, failed migrations/readiness, power-loss journals, preservation of writes after traffic reopens, and rollback. Provider calls in tests are simulated; no production keys or live accounts enter CI.
 
-The workflow exports the tested image and publishes that exact artifact, rather than rebuilding it. Images use `sha-<40-character-commit>` and the moving `production` tag in `ghcr.io/juandarr/emoji-dream-maker`. The server resolves the tag to an immutable digest and records its Git revision and account schema. Main workflow runs are serialized and superseded commits are skipped before promotion. A manual run from another branch only verifies it.
+Browser verification runs in parallel with unit/controller/image verification; the required `CI` job succeeds only when both pass. The workflow exports the tested image and publishes that exact artifact, rather than rebuilding it. Images use `sha-<40-character-commit>` and the moving `production` tag in `ghcr.io/juandarr/emoji-dream-maker`. The server resolves the tag to an immutable digest and records its Git revision and account schema. Main workflow runs are serialized and superseded commits are skipped before promotion. A manual run from another branch only verifies it.
 
 The host polls once a minute using systemd. It requires outbound access to GHCR; it exposes no deployment endpoint and needs no inbound SSH from GitHub or self-hosted Actions runner. Caddy exposes 80/443; Docker publishes the app only on `127.0.0.1:3000`. The Caddy example replaces client-supplied `X-Forwarded-For` with the directly connected client's IP. Revisit that configuration if a CDN or tunnel is introduced later.
 
@@ -143,15 +143,15 @@ On Ubuntu, before the first deployment only:
 
 ```sh
 sha256sum "$HOME/dreammaker-import.sqlite"
-sudo test ! -e /var/lib/dreammaker/accounts/accounts.sqlite
-sudo install -o 10001 -g 10001 -m 0600 "$HOME/dreammaker-import.sqlite" /var/lib/dreammaker/accounts/accounts.sqlite
+sudo test ! -e /var/lib/dreammaker/accounts/accounts.sqlite && \
+  sudo install -o 10001 -g 10001 -m 0600 "$HOME/dreammaker-import.sqlite" /var/lib/dreammaker/accounts/accounts.sqlite
 sudo docker run --rm --network none \
   --mount type=bind,src=/var/lib/dreammaker/accounts,dst=/check \
   --entrypoint node ghcr.io/juandarr/emoji-dream-maker:production \
   scripts/account-check.mjs /check/accounts.sqlite
 ```
 
-**Stop if the `test` command fails**: never overwrite an existing production file using the import command. Compare the transferred checksum and table counts with the source export. Keep the original export privately until cutover and restore testing succeed. Keep the original server stopped as a fallback to avoid diverging data.
+The conditional import refuses to run if a production file exists. **Stop if that command fails**: never overwrite an existing production file using the import command. Compare the transferred checksum and table counts with the source export. Keep the original export privately until cutover and restore testing succeed. Keep the original server stopped as a fallback to avoid diverging data.
 
 ## 5. Add the Caddy site
 
