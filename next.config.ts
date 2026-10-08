@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const config: NextConfig = {
   poweredByHeader: false,
+  output: "standalone",
   distDir: process.env.NEXT_DIST_DIR || ".next",
   serverExternalPackages: ["better-auth", "better-sqlite3"],
   experimental: { cpus: 1 },

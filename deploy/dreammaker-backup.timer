@@ -1,0 +1,10 @@
+[Unit]
+Description=Back up Dream Maker at 03:00 America/Bogota
+
+[Timer]
+OnCalendar=*-*-* 08:00:00 UTC
+Persistent=true
+Unit=dreammaker-backup.service
+
+[Install]
+WantedBy=timers.target

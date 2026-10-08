@@ -18,3 +18,11 @@ test-results/
 .next-e2e/
 
 .next-production-check/
+.next-deployment-check/
+__pycache__/
+deploy/app.env
+deploy/image.env
+deploy/state.json
+deploy/operation.lock
+deploy/preflight/
+deploy/control/

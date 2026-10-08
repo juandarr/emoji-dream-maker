@@ -1,0 +1,20 @@
+# Add this site to your existing Caddyfile; preserve your other services.
+# Direct router forwarding: no upstream proxies are trusted.
+dreammaker.hexloop.cc {
+    @maintenance file {
+        root /opt/dreammaker/control
+        try_files maintenance.flag
+    }
+    handle @maintenance {
+        header Retry-After "60"
+        respond "Dream Maker is updating. Please try again shortly." 503
+    }
+    handle {
+        reverse_proxy 127.0.0.1:3000 {
+            header_up X-Forwarded-For {remote_host}
+            transport http {
+                response_header_timeout 150s
+            }
+        }
+    }
+}

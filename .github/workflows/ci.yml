@@ -1,0 +1,146 @@
+name: Dream Maker CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dreammaker-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    name: Tests and production image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test -- --maxWorkers=1
+      - name: Deployment controller failure and recovery checks
+        run: python3 -m unittest discover -s tests/deployment -v
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Restore generated TypeScript config before packaging source
+        run: git restore -- tsconfig.json
+      - name: Build the production image
+        env:
+          # PR builds use a dummy public key. Private keys are never build inputs.
+          NEXT_PUBLIC_GIPHY_API_KEY: ${{ github.event_name == 'pull_request' && 'test-browser-key' || vars.NEXT_PUBLIC_GIPHY_API_KEY }}
+        run: >-
+          docker build --platform linux/amd64
+          --build-arg APP_REVISION="$GITHUB_SHA"
+          --build-arg NEXT_PUBLIC_GIPHY_API_KEY="$NEXT_PUBLIC_GIPHY_API_KEY"
+          --tag dreammaker-ci:test .
+      - name: Verify the exact image, database persistence and recovery
+        run: node scripts/test-container.mjs dreammaker-ci:test
+      - name: Validate Compose configuration
+        run: |
+          mkdir -p /tmp/dreammaker-compose-check
+          cp deploy/app.env.example /tmp/dreammaker-compose-check/app.env
+          DREAMMAKER_ROOT=/tmp/dreammaker-compose-check IMAGE_REF=dreammaker-ci:test docker compose -f deploy/compose.yaml config --quiet
+      - name: Validate the Caddy maintenance configuration
+        run: >-
+          docker run --rm --volume "$PWD/deploy/Caddyfile.example:/etc/caddy/Caddyfile:ro"
+          caddy:2@sha256:f2a1290d0463aad60660d4ec134943f183ee2a5f6c3eb7bf32dd984f2f020772 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - name: Export the tested main image
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: docker save dreammaker-ci:test --output /tmp/dreammaker-image.tar
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          name: tested-image
+          path: /tmp/dreammaker-image.tar
+          compression-level: 0
+          retention-days: 2
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: browser-failure-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  ci:
+    name: CI
+    runs-on: ubuntu-24.04
+    needs: verify
+    if: always()
+    steps:
+      - name: Require all verification checks
+        env:
+          RESULT: ${{ needs.verify.result }}
+        run: test "$RESULT" = success
+
+  publish:
+    name: Publish tested main image
+    needs: [verify, ci]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_REPOSITORY: ghcr.io/juandarr/emoji-dream-maker
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tested-image
+          path: /tmp/tested-image
+      - run: docker load --input /tmp/tested-image/dreammaker-image.tar
+      - name: Ignore superseded main commits
+        id: latest
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync } from 'node:fs';
+          const response = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/git/ref/heads/main`, {headers:{Authorization:`Bearer ${process.env.REGISTRY_TOKEN}`,Accept:'application/vnd.github+json'}});
+          if(!response.ok) throw new Error('Could not verify the current main revision');
+          const current = await response.json();
+          appendFileSync(process.env.GITHUB_OUTPUT, `eligible=${current.object.sha===process.env.GITHUB_SHA}\n`);
+          JS
+      - name: Publish immutable commit and promote production
+        if: steps.latest.outputs.eligible == 'true'
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker tag dreammaker-ci:test "$IMAGE_REPOSITORY:sha-$GITHUB_SHA"
+          docker push "$IMAGE_REPOSITORY:sha-$GITHUB_SHA"
+          docker tag dreammaker-ci:test "$IMAGE_REPOSITORY:production"
+          docker push "$IMAGE_REPOSITORY:production"
+      - name: Verify deployment through the public URL
+        if: steps.latest.outputs.eligible == 'true' && vars.PRODUCTION_URL != ''
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: node scripts/verify-deployment.mjs "$PRODUCTION_URL" "$GITHUB_SHA"
+      - name: Bootstrap notice
+        if: steps.latest.outputs.eligible == 'true' && vars.PRODUCTION_URL == ''
+        run: echo 'Image published. Complete the Ubuntu setup, then set PRODUCTION_URL to enable deployment verification.'
+      - name: Remove temporary registry login
+        if: always()
+        run: docker logout ghcr.io
