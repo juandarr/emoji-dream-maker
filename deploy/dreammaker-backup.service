@@ -1,0 +1,11 @@
+[Unit]
+Description=Create and verify a consistent Dream Maker SQLite backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/dreammaker/manage.py backup
+TimeoutStartSec=15min
+UMask=0077
+NoNewPrivileges=true

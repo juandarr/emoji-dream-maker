@@ -5,6 +5,7 @@ A personal emoji explorer: bilingual keyword search, a cosmic constellation, and
 ## Architecture and future planning
 
 - [Current architecture overview](docs/architecture-overview.md): frameworks, components, request flow, domain models, persistence, caches, provider boundaries, and diagrams.
+- [Production deployment and CI/CD](docs/production-deployment.md): repeatable Ubuntu/Caddy setup, existing SQLite transfer, GitHub Actions, backup, rollback, and recovery.
 - [Future improvements and playground plan](docs/future-improvements.md): an emoji composition editor, proposed storage and generation models, staged delivery, and other improvements. The initial Playground is now implemented; this document also describes later milestones.
 
 ## Version waypoints

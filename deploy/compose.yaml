@@ -1,0 +1,30 @@
+name: dreammaker
+services:
+  app:
+    image: ${IMAGE_REF:?Run the deployment manager to select an immutable image}
+    platform: linux/amd64
+    container_name: dreammaker-app
+    init: true
+    restart: unless-stopped
+    # Match docker run --env-file in preflight: literal values, no interpolation.
+    env_file:
+      - path: ${DREAMMAKER_ROOT:-/opt/dreammaker}/app.env
+        format: raw
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      ACCOUNT_DB_PATH: /data/accounts.sqlite
+      YOUTUBE_CACHE_DIR: /cache/youtube
+    ports:
+      - "127.0.0.1:${DREAMMAKER_HOST_PORT:-3101}:3000"
+    volumes:
+      - ${DREAMMAKER_DATA_DIR:-/var/lib/dreammaker/accounts}:/data
+      - ${DREAMMAKER_CACHE_DIR:-/var/cache/dreammaker/youtube}:/cache
+    stop_grace_period: 150s
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -70,8 +70,12 @@ test("local typography, decorative opening letter and reader remain usable at na
   const fonts = await prose.evaluate(async el => {
     const heading = document.querySelector(".pg-output .pg-story-title")!;
     const styles = getComputedStyle(el), title = getComputedStyle(heading);
-    const bodyFaces = await document.fonts.load(`18px ${styles.fontFamily}`, "Érase");
-    const titleFaces = await document.fonts.load(`500 38px ${title.fontFamily}`, "Invitation");
+    // Load the bundled primary faces. Loading the entire stack also requests
+    // Next's local("Times New Roman") fallback, which is absent on Linux CI.
+    const bodyFamily = styles.fontFamily.split(",")[0];
+    const titleFamily = title.fontFamily.split(",")[0];
+    const bodyFaces = await document.fonts.load(`18px ${bodyFamily}`, "Érase");
+    const titleFaces = await document.fonts.load(`500 38px ${titleFamily}`, "Invitation");
     return { body: bodyFaces.map(f => f.status), title: titleFaces.map(f => f.status), firstLetterSize: parseFloat(getComputedStyle(el, "::first-letter").fontSize), bodySize: parseFloat(styles.fontSize), titleStyle: title.fontStyle };
   });
   expect(fonts.body).toContain("loaded");expect(fonts.title).toContain("loaded");

@@ -1,0 +1,12 @@
+[Unit]
+Description=Deploy a tested Dream Maker image with SQLite backup and rollback
+After=docker.service caddy.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/dreammaker/manage.py update
+TimeoutStartSec=15min
+UMask=0077
+NoNewPrivileges=true

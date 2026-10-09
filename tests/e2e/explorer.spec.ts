@@ -1,10 +1,21 @@
 import { test, expect } from "./helpers/account";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
+async function hoverEmoji(emoji:Locator){
+  // A moving target may leave its measured position before the pointer arrives.
+  // Retry the real pointer movement until CSS :hover has paused the orbit.
+  await expect.poll(async()=>{
+    await emoji.hover({force:true});
+    return emoji.evaluate(el=>el.matches(":hover"));
+  }).toBe(true);
+}
 async function clickEmoji(page:Page,label:string){
   await expect(page.locator(".language-picker select")).toBeEnabled();
   const emoji=page.getByLabel(label,{exact:true});
-  // Move onto the orbiting target first, just as a pointer user does.
-  await emoji.hover({force:true});
+  // Media tests need a stable selection; focus pauses the orbit through the
+  // app's accessible keyboard path. Hover/drag behavior has dedicated tests.
+  await page.keyboard.press("Tab");
+  await emoji.focus();
+  await expect.poll(()=>emoji.evaluate(el=>el.matches(":focus-visible"))).toBe(true);
   await emoji.click();
 }
 async function stubSources(page:Page){
@@ -86,7 +97,7 @@ test("dragging into the portal opens the same subject and Escape closes",async({
   await page.getByRole("textbox",{name:/Search a word/}).fill("octopus");
   const emoji=page.getByLabel("octopus",{exact:true});await expect(page.locator(".emoji-button")).toHaveCount(1);
   await page.locator(".dream-canvas").scrollIntoViewIfNeeded();
-  await emoji.hover({force:true});
+  await hoverEmoji(emoji);
   await expect(emoji).toHaveCSS("background-color","rgba(0, 0, 0, 0)");
   await expect(emoji).toHaveCSS("border-top-color","rgba(0, 0, 0, 0)");
   const dragFont=await emoji.locator(".emoji-glyph").evaluate(el=>parseFloat(getComputedStyle(el).fontSize)*2);
@@ -194,7 +205,7 @@ test("emojis orbit upright, double on hover, pause for picking, and resume",asyn
   await page.waitForTimeout(700);
   const moved=await emoji.boundingBox();
   expect(Math.hypot(moved!.x-first!.x,moved!.y-first!.y)).toBeGreaterThan(2);
-  await emoji.hover({force:true});
+  await hoverEmoji(emoji);
   await expect.poll(()=>emoji.locator(".emoji-glyph").evaluate(el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a)).toBeCloseTo(2,1);
   const paused=await emoji.boundingBox();
   await page.waitForTimeout(400);
@@ -219,7 +230,7 @@ test("drag previews preserve the grab point across orbital positions",async({pag
   const canvas=await page.locator(".dream-canvas").boundingBox();
   for(const label of ["red heart","octopus","crescent moon","flag: Colombia"]){
     const emoji=page.getByLabel(label,{exact:true});
-    await emoji.hover({force:true});
+    await hoverEmoji(emoji);
     const source=(await emoji.boundingBox())!;
     const grab={x:source.x+source.width*.6,y:source.y+source.height*.4};
     await page.mouse.move(grab.x,grab.y);await page.mouse.down();
@@ -250,7 +261,7 @@ test("black hole light keeps flowing during drag and accelerates with proximity"
   expect(await time()).toBeGreaterThan(idle);
 
   const emoji=page.getByLabel("octopus",{exact:true});
-  await emoji.hover({force:true});
+  await hoverEmoji(emoji);
   const source=(await emoji.boundingBox())!;
   const target=(await page.locator(".portal").boundingBox())!;
   const center={x:target.x+target.width/2,y:target.y+target.height/2};
@@ -287,7 +298,7 @@ test("lensing follows either side, turns white with agitation, and settles after
   await expect(page.locator(".emoji-button")).toHaveCount(1);
   await page.locator(".dream-canvas").scrollIntoViewIfNeeded();
   const emoji=page.locator('.emoji-button[aria-label="octopus"]');
-  await emoji.hover({force:true});
+  await hoverEmoji(emoji);
   const source=(await emoji.boundingBox())!;
   const target=(await page.locator(".portal").boundingBox())!;
   const center={x:target.x+target.width/2,y:target.y+target.height/2};
@@ -302,11 +313,21 @@ test("lensing follows either side, turns white with agitation, and settles after
   await expect.poll(tilt).toBeGreaterThan(.02);
   await page.mouse.move(center.x-target.width*.35,center.y,{steps:12});
   await expect.poll(tilt).toBeLessThan(-.02);
-  for(let i=0;i<10;i++) {
-    await page.mouse.move(center.x+(i%2?-.28:.28)*target.width,center.y,{steps:2});
-    await page.waitForTimeout(35);
-  }
-  await expect.poll(heat).toBeGreaterThan(.65);
+  // Run rapid pointer moves in the browser: protocol round trips on a slow CI
+  // runner must not turn a quick gesture into ten unrelated slow movements.
+  const peakHeat=await page.evaluate(async({center,width})=>{
+    let peak=0;
+    for(let i=0;i<10;i++) {
+      document.dispatchEvent(new PointerEvent("pointermove",{
+        bubbles:true,pointerId:1,pointerType:"mouse",isPrimary:true,buttons:1,
+        clientX:center.x+(i%2?-.28:.28)*width,clientY:center.y,
+      }));
+      await new Promise(resolve=>setTimeout(resolve,35));
+      peak=Math.max(peak,Number(document.querySelector(".black-hole-energy-map")!.getAttribute("values")!.split(" ")[4]));
+    }
+    return peak;
+  },{center,width:target.width});
+  expect(peakHeat).toBeGreaterThan(.65);
   await expect.poll(heat,{timeout:5000}).toBeLessThan(.02);
   await expect(page.locator(".drag-emoji-lens")).toBeVisible();
   // Crossing exact alignment must not introduce invalid geometry or lose the grab point.
@@ -320,13 +341,13 @@ test("lensing follows either side, turns white with agitation, and settles after
   await expect.poll(rate).toBe(1);
   await page.keyboard.press("Escape");await page.mouse.up();
 
-  await emoji.hover({force:true});
+  await hoverEmoji(emoji);
   const again=(await emoji.boundingBox())!;
   await page.mouse.move(again.x+again.width/2,again.y+again.height/2);await page.mouse.down();
   await page.mouse.move(center.x,center.y,{steps:12});
   await expect(page.locator(".gravity-echo")).toBeVisible();
   await page.mouse.up();
-  await expect(page.getByRole("dialog",{name:"Octopus",exact:true})).toBeVisible();
+  await expect(page.getByRole("dialog",{name:"Octopus",exact:true})).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator(".gravity-echo")).toHaveCount(0);
@@ -845,5 +866,6 @@ test('portal close-button highlight is square and centers the X equally in every
     const close=page.locator('.gallery-top').getByRole('button',{name:'Close gallery',exact:true});await close.hover();
     const bounds=await close.boundingBox(),glyph=await close.locator('svg').boundingBox();expect(bounds!.width).toBe(bounds!.height);expect(glyph!.x-bounds!.x).toBeCloseTo(bounds!.x+bounds!.width-glyph!.x-glyph!.width,1);expect(glyph!.y-bounds!.y).toBeCloseTo(bounds!.y+bounds!.height-glyph!.y-glyph!.height,1);
     await close.click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
   }
 });
